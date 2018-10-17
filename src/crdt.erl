@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(crdt_app).
+-module(crdt).
 
 -behaviour(application).
 

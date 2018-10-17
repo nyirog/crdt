@@ -2,13 +2,13 @@
  [{description, "An OTP application"},
   {vsn, "0.1.0"},
   {registered, []},
-  {mod, { crdt_app, []}},
+  {mod, { crdt, []}},
   {applications,
    [kernel,
     stdlib
    ]},
   {env,[]},
-  {modules, [crdt_app, crdt_server, crdt_sup]},
+  {modules, [crdt, crdt_server, crdt_sup]},
 
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
