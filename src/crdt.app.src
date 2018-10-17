@@ -8,7 +8,7 @@
     stdlib
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [crdt_app, crdt_server, crdt_sup]},
 
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
