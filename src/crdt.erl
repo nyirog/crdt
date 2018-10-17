@@ -10,14 +10,20 @@
 %% Application callbacks
 -export([start/2, stop/1]).
 
+-export([add/1, list/0]).
+
 %%====================================================================
 %% API
 %%====================================================================
 
-start(_StartType, _StartArgs) -> crdt_sup:start_link().
+start(normal, []) -> crdt_sup:start_link().
 
 %%--------------------------------------------------------------------
-stop(_State) -> ok.
+stop(_State) -> crdt_sup:stop().
+
+add(Key) -> crdt_server:add(Key).
+
+list() -> crdt_server:list().
 
 %%====================================================================
 %% Internal functions
