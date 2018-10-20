@@ -10,7 +10,7 @@
 %% Application callbacks
 -export([start/2, stop/1]).
 
--export([add/1, list/0, remove/1]).
+-export([add/1, list/0, member/1, remove/1]).
 
 %%====================================================================
 %% API
@@ -26,6 +26,8 @@ add(Key) -> crdt_server:add(Key).
 remove(Key) -> crdt_server:remove(Key).
 
 list() -> crdt_server:list().
+
+member(Key) -> crdt_server:member(Key).
 
 %%====================================================================
 %% Internal functions
