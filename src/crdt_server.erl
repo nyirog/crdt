@@ -10,7 +10,8 @@
 -record(state, {clock, entries}).
 
 %% Application callbacks
--export([add/1, member/1, members/0, remove/1, start_link/0, stop/0]).
+-export([add/1, connect/1, member/1, members/0, remove/1, start_link/0,
+         stop/0]).
 
 -export([handle_call/3, handle_cast/2, init/1]).
 
@@ -48,6 +49,12 @@ handle_cast(_Event, State) -> {noreply, State}.
 add(Key) -> gen_server:cast(?MODULE, {add, Key}).
 
 remove(Key) -> gen_server:cast(?MODULE, {remove, Key}).
+
+connect(Node) ->
+    net_kernel:connect_node(Node),
+    Members = gen_server:call({?MODULE, Node}, members),
+    lists:foreach(fun (Key) -> add(Key) end, sets:to_list(Members)),
+    ok.
 
 members() -> gen_server:call(?MODULE, members).
 
