@@ -9,7 +9,7 @@
     uuid
    ]},
   {env,[]},
-  {modules, [crdt, crdt_server, crdt_sup]},
+  {modules, [crdt, crdt_server, crdt_sup ,crdt_cluster]},
 
   {maintainers, []},
   {licenses, ["Apache 2.0"]},

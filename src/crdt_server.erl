@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc crdt public server
+%% @doc crdt server
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -13,7 +13,7 @@
 -export([add/1, connect/1, member/1, members/0, remove/1, start_link/0,
          stop/0]).
 
--export([handle_call/3, handle_cast/2, init/1]).
+-export([handle_call/3, handle_cast/2, handle_info/2, init/1]).
 
 %%====================================================================
 %% API
@@ -43,6 +43,8 @@ handle_cast({remove, Key}, _State = #state{clock = Clock, entries = Entries}) ->
     NewEntries = maps:filter(fun (_Id, EntryKey) -> EntryKey =/= Key end, Entries),
     {noreply, #state{clock = Clock, entries = NewEntries}};
 handle_cast(_Event, State) -> {noreply, State}.
+
+handle_info(_Info, State) -> {noreply, State}.
 
 %%--------------------------------------------------------------------
 
