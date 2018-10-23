@@ -34,6 +34,8 @@ handle_call(members, _From, State = #state{entries = Entries}) ->
 handle_call({member, Key}, _From, State = #state{entries = Entries}) ->
     {reply, lists:member(Key, maps:values(Entries)), State};
 handle_call(stop, _From, State) -> {stop, normal, ok, State};
+handle_call({connect, Node}, _From, State) ->
+    Nodes = crdt_cluster:connect(Node), {reply, Nodes, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Key}, _State = #state{clock = Clock, entries = Entries}) ->
@@ -52,11 +54,7 @@ add(Key) -> gen_server:cast(?MODULE, {add, Key}).
 
 remove(Key) -> gen_server:cast(?MODULE, {remove, Key}).
 
-connect(Node) ->
-    net_kernel:connect_node(Node),
-    Members = gen_server:call({?MODULE, Node}, members),
-    lists:foreach(fun (Key) -> add(Key) end, sets:to_list(Members)),
-    ok.
+connect(Node) -> gen_server:call(?MODULE, {connect, Node}).
 
 members() -> gen_server:call(?MODULE, members).
 
