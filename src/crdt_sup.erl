@@ -37,9 +37,7 @@ init([]) ->
     {ok,
      {{one_for_all, 0, 1},
       [{server, {crdt_server, start_link, []}, permanent, 5000, worker,
-        [crdt_server]},
-       {cluster, {crdt_cluster, start_link, []}, permanent, 5000, worker,
-        [crdt_cluster]}]}}.
+        [crdt_server]}]}}.
 
 %%====================================================================
 %% Internal functions
