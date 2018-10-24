@@ -22,15 +22,19 @@ stop(_State) -> crdt_sup:stop().
 
 %%--------------------------------------------------------------------
 
-add(Key) -> crdt_server:add(Key).
+add(Key) -> crdt_server:add(crdt_server, Key).
 
-remove(Key) -> crdt_server:remove(Key).
+remove(Key) -> crdt_server:remove(crdt_server, Key).
 
-members() -> crdt_server:members().
+members() -> crdt_server:members(crdt_server).
 
-member(Key) -> crdt_server:member(Key).
+member(Key) -> crdt_server:member(crdt_server, Key).
 
-connect(Node) -> crdt_server:connect(Node).
+connect(Node) ->
+    case rpc:call(Node, erlang, whereis, [crdt_server]) of
+        Pid when erlang:is_pid(Pid) -> crdt_server:connect(crdt_server, Pid);
+        _ -> undefined
+    end.
 
 %%====================================================================
 %% Internal functions

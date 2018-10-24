@@ -30,8 +30,8 @@ init(State) -> {ok, State}.
 handle_call(stop, _From, State) -> {stop, normal, ok, State};
 handle_call(nodes, _From, State = #state{nodes = Nodes}) ->
     {reply, Nodes, State};
-handle_call(connect, {Pid, Tag}, _State = #state{nodes = Nodes}) ->
-    {reply, Nodes, #state{nodes = [Pid | Nodes]}};
+handle_call(connect, {Pid, _Tag}, _State = #state{nodes = Nodes}) ->
+    {reply, [erlang:whereis(crdt_server) | Nodes], #state{nodes = [Pid | Nodes]}};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast(_Event, State) -> {noreply, State}.
