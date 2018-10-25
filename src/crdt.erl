@@ -7,6 +7,8 @@
 
 -behaviour(application).
 
+-define(SERVER, crdt_server).
+
 %% Application callbacks
 -export([start/2, stop/1]).
 
@@ -16,25 +18,25 @@
 %% API
 %%====================================================================
 
-start(normal, []) -> crdt_sup:start_link().
+start(normal, []) -> crdt_sup:start_link(?SERVER).
 
 stop(_State) -> crdt_sup:stop().
 
 %%--------------------------------------------------------------------
 
-add(Key) -> crdt_server:add(crdt_server, Key).
+add(Key) -> crdt_server:add(?SERVER, Key).
 
-remove(Key) -> crdt_server:remove(crdt_server, Key).
+remove(Key) -> crdt_server:remove(?SERVER, Key).
 
-members() -> crdt_server:members(crdt_server).
+members() -> crdt_server:members(?SERVER).
 
-member(Key) -> crdt_server:member(crdt_server, Key).
+member(Key) -> crdt_server:member(?SERVER, Key).
 
-nodes() -> crdt_server:nodes(crdt_server).
+nodes() -> crdt_server:nodes(?SERVER).
 
 connect(Node) ->
-    case rpc:call(Node, erlang, whereis, [crdt_server]) of
-        Pid when erlang:is_pid(Pid) -> crdt_server:connect(crdt_server, Pid);
+    case rpc:call(Node, erlang, whereis, [?SERVER]) of
+        Pid when erlang:is_pid(Pid) -> crdt_server:connect(?SERVER, Pid);
         _ -> undefined
     end.
 

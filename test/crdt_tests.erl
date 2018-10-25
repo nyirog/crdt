@@ -22,11 +22,11 @@ crdt_test_() ->
 %%====================================================================
 
 start() ->
-    {ok, Pid} = crdt_server:start_link(),
+    {ok, Pid} = crdt_server:start_link(crdt_server),
     Pid.
 
-stop(_) ->
-    crdt_server:stop().
+stop(Pid) ->
+    crdt_server:stop(Pid).
 
 %%====================================================================
 %% Tests

@@ -11,7 +11,7 @@
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1, remove/2, start_link/0,
-         stop/0]).
+         start_link/1, stop/1]).
 
 -export([handle_call/3, handle_cast/2, handle_info/2, init/1]).
 
@@ -19,11 +19,13 @@
 %% API
 %%====================================================================
 
-start_link() ->
-    quickrand:seed(),
-    gen_server:start_link({local, ?MODULE}, ?MODULE, init_state(), []).
+start_link(Name) ->
+    gen_server:start_link({local, Name}, ?MODULE, init_state(), []).
 
-stop() -> gen_server:call(?MODULE, stop).
+start_link() ->
+    gen_server:start_link(?MODULE, init_state(), []).
+
+stop(Pid) -> gen_server:call(Pid, stop).
 
 init(State) -> {ok, State}.
 
