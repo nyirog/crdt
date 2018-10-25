@@ -36,14 +36,6 @@ handle_call({member, Key}, _From, State = #state{entries = Entries}) ->
 handle_call(nodes, _From, State = #state{nodes = Nodes}) ->
     {reply, sets:to_list(Nodes), State};
 handle_call(stop, _From, State) -> {stop, normal, ok, State};
-handle_call({join, OtherNodes}, {Pid, _Tag}, State = #state{nodes = Nodes}) ->
-    RemoteNodes = sets:del_element(self(), sets:add_element(Pid, OtherNodes)),
-    {reply, Nodes, State#state{nodes = sets:union(Nodes, RemoteNodes)}};
-handle_call({connect, RemotePid}, _From, State = #state{nodes = Nodes}) ->
-    RemoteNodes = sets:del_element(self(),
-                                   sets:add_element(RemotePid,
-                                                    gen_server:call(RemotePid, {join, Nodes}))),
-    {reply, RemoteNodes, State#state{nodes = sets:union(Nodes, RemoteNodes)}};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Key}, State = #state{clock = Clock, entries = Entries}) ->
@@ -53,6 +45,19 @@ handle_cast({add, Key}, State = #state{clock = Clock, entries = Entries}) ->
 handle_cast({remove, Key}, State = #state{entries = Entries}) ->
     NewEntries = maps:filter(fun (_Id, EntryKey) -> EntryKey =/= Key end, Entries),
     {noreply, State#state{entries = NewEntries}};
+handle_cast({connect, Pid}, State = #state{nodes = Nodes}) ->
+    NewNodes = sets:add_element(Pid, Nodes),
+    join(Pid, sets:add_element(self(), NewNodes)),
+    {noreply, State#state{nodes = NewNodes}};
+handle_cast({join, OtherNodes}, State = #state{nodes = Nodes}) ->
+    NormalizedNodes = sets:del_element(self(), OtherNodes),
+    if NormalizedNodes =:= Nodes -> {noreply, State};
+       true ->
+           NewNodes = sets:union(NormalizedNodes, Nodes),
+           AllNodes = sets:add_element(self(), NewNodes),
+           lists:foreach(fun (Pid) -> join(Pid, AllNodes) end, sets:to_list(NewNodes)),
+           {noreply, State#state{nodes = NewNodes}}
+    end;
 handle_cast(_Event, State) -> {noreply, State}.
 
 handle_info(_Info, State) -> {noreply, State}.
@@ -63,7 +68,7 @@ add(Pid, Key) -> gen_server:cast(Pid, {add, Key}).
 
 remove(Pid, Key) -> gen_server:cast(Pid, {remove, Key}).
 
-connect(Pid, Node) -> gen_server:call(Pid, {connect, Node}).
+connect(Pid, Node) -> gen_server:cast(Pid, {connect, Node}).
 
 members(Pid) -> gen_server:call(Pid, members).
 
@@ -78,3 +83,5 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 create_id() -> uuid:new(self()).
 
 init_state() -> #state{clock = 0, entries = maps:new(), nodes = sets:new()}.
+
+join(Pid, Nodes) -> gen_server:cast(Pid, {join, Nodes}).
