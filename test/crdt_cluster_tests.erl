@@ -9,7 +9,9 @@
 
 crdt_cluster_test_() ->
     [{"connect register all the cluster nodes",
-      ?setup(fun connect_registers_all_the_cluster_nodes/1)}].
+      ?setup(fun connect_registers_all_the_cluster_nodes/1)},
+     {"add is propagated between cluster nodes",
+      ?setup(fun add_is_propagated/1)}].
 
 %%====================================================================
 %% Tests functions
@@ -40,3 +42,8 @@ connect_registers_all_the_cluster_nodes(#{a := PidA, b := PidB, c := PidC}) ->
      ?_assertNot(lists:member(PidA, crdt_server:nodes(PidA))),
      ?_assert(lists:member(PidC, crdt_server:nodes(PidA))),
      ?_assert(lists:member(PidB, crdt_server:nodes(PidA)))].
+
+add_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
+    crdt_server:add(PidA, 42),
+    [?_assert(crdt_server:member(PidB, 42)),
+     ?_assert(crdt_server:member(PidC, 42))].

@@ -7,7 +7,7 @@
 
 -behaviour(gen_server).
 
--record(state, {clock, entries, nodes}).
+-record(state, {entries, nodes}).
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1, remove/2, start_link/0,
@@ -22,8 +22,7 @@
 start_link(Name) ->
     gen_server:start_link({local, Name}, ?MODULE, init_state(), []).
 
-start_link() ->
-    gen_server:start_link(?MODULE, init_state(), []).
+start_link() -> gen_server:start_link(?MODULE, init_state(), []).
 
 stop(Pid) -> gen_server:call(Pid, stop).
 
@@ -40,9 +39,9 @@ handle_call(nodes, _From, State = #state{nodes = Nodes}) ->
 handle_call(stop, _From, State) -> {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
-handle_cast({add, Key}, State = #state{clock = Clock, entries = Entries}) ->
-    NewState = State#state{clock = Clock + 1,
-                           entries = Entries#{create_id() => Key}},
+handle_cast({add, Key}, State = #state{entries = Entries, nodes = Nodes}) ->
+    NewState = State#state{entries = Entries#{create_id() => Key}},
+    lists:foreach(fun (Pid) -> add(Pid, Key) end, sets:to_list(Nodes)),
     {noreply, NewState};
 handle_cast({remove, Key}, State = #state{entries = Entries}) ->
     NewEntries = maps:filter(fun (_Id, EntryKey) -> EntryKey =/= Key end, Entries),
@@ -84,6 +83,6 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 
 create_id() -> uuid:new(self()).
 
-init_state() -> #state{clock = 0, entries = maps:new(), nodes = sets:new()}.
+init_state() -> #state{entries = maps:new(), nodes = sets:new()}.
 
 join(Pid, Nodes) -> gen_server:cast(Pid, {join, Nodes}).

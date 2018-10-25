@@ -17,7 +17,8 @@
 %% API functions
 %%====================================================================
 
-start_link(ServerName) -> supervisor:start_link({local, crdt}, ?MODULE, ServerName).
+start_link(ServerName) ->
+    supervisor:start_link({local, crdt}, ?MODULE, ServerName).
 
 stop() ->
     case whereis(crdt) of
