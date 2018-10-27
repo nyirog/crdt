@@ -40,12 +40,19 @@ handle_call(stop, _From, State) -> {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Key}, State = #state{entries = Entries, nodes = Nodes}) ->
-    NewState = State#state{entries = Entries#{create_id() => Key}},
-    lists:foreach(fun (Pid) -> add(Pid, Key) end, sets:to_list(Nodes)),
-    {noreply, NewState};
-handle_cast({remove, Key}, State = #state{entries = Entries}) ->
+    Id = create_id(),
+    lists:foreach(fun (Pid) -> gen_server:cast(Pid, {add, Id, Key}) end, sets:to_list(Nodes)),
+    {noreply, State#state{entries = Entries#{Id => Key}}};
+handle_cast({add, Id, Key}, State = #state{entries = Entries}) ->
+    {noreply, State#state{entries = Entries#{Id => Key}}};
+handle_cast({remove, Key}, State = #state{entries = Entries, nodes = Nodes}) ->
+    RemovableElements = maps:filter(fun (_Id, EntryKey) -> EntryKey =:= Key end, Entries),
+    RemovableTasks = [{Pid, Id}|| {Id, _Key} <- maps:to_list(RemovableElements), Pid <- sets:to_list(Nodes)],
+    lists:foreach(fun ({Pid, Id}) -> gen_server:cast(Pid, {delete, Id}) end, RemovableTasks),
     NewEntries = maps:filter(fun (_Id, EntryKey) -> EntryKey =/= Key end, Entries),
     {noreply, State#state{entries = NewEntries}};
+handle_cast({delete, Id}, State = #state{entries = Entries}) ->
+    {noreply, State#state{entries = maps:remove(Id, Entries)}};
 handle_cast({connect, Pid}, State = #state{nodes = Nodes}) ->
     NewNodes = sets:add_element(Pid, Nodes),
     join(Pid, sets:add_element(self(), NewNodes)),
