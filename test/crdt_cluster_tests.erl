@@ -35,25 +35,23 @@ stop(Nodes) ->
 %%====================================================================
 
 connect_registers_all_the_cluster_nodes(#{a := PidA, b := PidB, c := PidC}) ->
-    [?_assertNot(lists:member(PidB, crdt_server:nodes(PidB))),
-     ?_assert(lists:member(PidA, crdt_server:nodes(PidB))),
-     ?_assert(lists:member(PidC, crdt_server:nodes(PidB))),
-     ?_assertNot(lists:member(PidC, crdt_server:nodes(PidC))),
+    [?_assertNot(lists:member(PidC, crdt_server:nodes(PidC))),
      ?_assert(lists:member(PidA, crdt_server:nodes(PidC))),
-     ?_assert(lists:member(PidB, crdt_server:nodes(PidC))),
-     ?_assertNot(lists:member(PidA, crdt_server:nodes(PidA))),
-     ?_assert(lists:member(PidC, crdt_server:nodes(PidA))),
-     ?_assert(lists:member(PidB, crdt_server:nodes(PidA)))].
+     ?_assert(lists:member(PidB, crdt_server:nodes(PidC)))].
 
 add_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
+    timer:sleep(1),
     crdt_server:add(PidA, 42),
+    timer:sleep(1),
     [?_assert(crdt_server:member(PidB, 42)),
      ?_assert(crdt_server:member(PidC, 42))].
 
 remove_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
+    timer:sleep(1),
     crdt_server:add(PidA, 42),
     crdt_server:add(PidA, 24),
     crdt_server:remove(PidA, 42),
+    timer:sleep(1),
     [?_assertNot(crdt_server:member(PidB, 42)),
      ?_assert(crdt_server:member(PidB, 24)),
      ?_assertNot(crdt_server:member(PidC, 42)),

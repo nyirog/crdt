@@ -33,23 +33,22 @@ stop(Pid) ->
 %%====================================================================
 
 list_initial_value(_) ->
-    [?_assertEqual(sets:new(), crdt:members())].
+    [?_assertEqual([], crdt:members())].
 
 addition(_) ->
     crdt:add(6),
     crdt:add(9),
     [?_assert(crdt:member(6)),
-     ?_assert(crdt:member(9)),
-     ?_assertEqual(sets:from_list([6, 9]), crdt:members())].
+     ?_assert(crdt:member(9))].
 
 
 repeat_addition(_) ->
     crdt:add(9),
     crdt:add(9),
-    [?_assertEqual(sets:from_list([9]), crdt:members())].
+    [?_assertEqual([9], crdt:members())].
 
 remove_repeated_value(_) ->
     crdt:add(9),
     crdt:add(9),
     crdt:remove(9),
-    [?_assertEqual(sets:new(), crdt:members())].
+    [?_assertEqual([], crdt:members())].

@@ -31,7 +31,7 @@ init(State) -> {ok, State}.
 %%--------------------------------------------------------------------
 
 handle_call(members, _From, State = #state{entries = Entries}) ->
-    {reply, sets:from_list(maps:values(Entries)), State};
+    {reply, sets:to_list(sets:from_list(maps:values(Entries))), State};
 handle_call({member, Key}, _From, State = #state{entries = Entries}) ->
     {reply, lists:member(Key, maps:values(Entries)), State};
 handle_call(nodes, _From, State = #state{nodes = Nodes}) ->
@@ -41,14 +41,18 @@ handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Key}, State = #state{entries = Entries, nodes = Nodes}) ->
     Id = create_id(),
-    lists:foreach(fun (Pid) -> gen_server:cast(Pid, {add, Id, Key}) end, sets:to_list(Nodes)),
+    lists:foreach(fun (Pid) -> gen_server:cast(Pid, {add, Id, Key}) end,
+                  sets:to_list(Nodes)),
     {noreply, State#state{entries = Entries#{Id => Key}}};
 handle_cast({add, Id, Key}, State = #state{entries = Entries}) ->
     {noreply, State#state{entries = Entries#{Id => Key}}};
 handle_cast({remove, Key}, State = #state{entries = Entries, nodes = Nodes}) ->
-    RemovableElements = maps:filter(fun (_Id, EntryKey) -> EntryKey =:= Key end, Entries),
-    RemovableTasks = [{Pid, Id}|| {Id, _Key} <- maps:to_list(RemovableElements), Pid <- sets:to_list(Nodes)],
-    lists:foreach(fun ({Pid, Id}) -> gen_server:cast(Pid, {delete, Id}) end, RemovableTasks),
+    RemovableElements = maps:filter(fun (_Id, EntryKey) -> EntryKey =:= Key end,
+                                    Entries),
+    RemovableTasks = [{Pid, Id}
+                      || {Id, _Key} <- maps:to_list(RemovableElements), Pid <- sets:to_list(Nodes)],
+    lists:foreach(fun ({Pid, Id}) -> gen_server:cast(Pid, {delete, Id}) end,
+                  RemovableTasks),
     NewEntries = maps:filter(fun (_Id, EntryKey) -> EntryKey =/= Key end, Entries),
     {noreply, State#state{entries = NewEntries}};
 handle_cast({delete, Id}, State = #state{entries = Entries}) ->
