@@ -1,0 +1,6 @@
+language: erlang
+otp_release:
+  - 21.1
+script:
+  - rebar3 eunit
+  - rebar3 ct --dir ./ct --readable=false
