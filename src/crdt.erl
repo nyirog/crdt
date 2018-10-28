@@ -12,7 +12,8 @@
 %% Application callbacks
 -export([start/2, stop/1]).
 
--export([add/1, connect/1, member/1, members/0, nodes/0, remove/1]).
+-export([add/1, connect/1, member/1, members/0, nodes/0,
+         remove/1]).
 
 %%====================================================================
 %% API
@@ -36,7 +37,8 @@ nodes() -> crdt_server:nodes(?SERVER).
 
 connect(Node) ->
     case rpc:call(Node, erlang, whereis, [?SERVER]) of
-        Pid when erlang:is_pid(Pid) -> crdt_server:connect(?SERVER, Pid);
+        Pid when erlang:is_pid(Pid) ->
+            crdt_server:connect(?SERVER, Pid);
         _ -> undefined
     end.
 

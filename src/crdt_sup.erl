@@ -18,7 +18,8 @@
 %%====================================================================
 
 start_link(ServerName) ->
-    supervisor:start_link({local, crdt}, ?MODULE, ServerName).
+    supervisor:start_link({local, crdt}, ?MODULE,
+                          ServerName).
 
 stop() ->
     case whereis(crdt) of
@@ -37,8 +38,8 @@ stop() ->
 init(ServerName) ->
     {ok,
      {{one_for_all, 0, 1},
-      [{server, {crdt_server, start_link, [ServerName]}, permanent, 5000, worker,
-        [crdt_server]}]}}.
+      [{server, {crdt_server, start_link, [ServerName]},
+        permanent, 5000, worker, [crdt_server]}]}}.
 
 %%====================================================================
 %% Internal functions
