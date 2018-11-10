@@ -4,3 +4,4 @@ otp_release:
 script:
   - rebar3 eunit
   - rebar3 ct --dir ./ct --readable=false
+  - rebar3 proper
