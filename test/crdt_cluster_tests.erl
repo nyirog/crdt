@@ -41,9 +41,9 @@ connect_registers_all_the_cluster_nodes(#{a := PidA, b := PidB, c := PidC}) ->
 
 add_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
     timer:sleep(1),
-    crdt_server:add(PidA, 42),
+    crdt_server:add(PidB, 42),
     timer:sleep(1),
-    [?_assert(crdt_server:member(PidB, 42)),
+    [?_assert(crdt_server:member(PidA, 42)),
      ?_assert(crdt_server:member(PidC, 42))].
 
 remove_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
