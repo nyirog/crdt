@@ -7,7 +7,7 @@
 
 -behaviour(gen_server).
 
--record(state, {entries, nodes}).
+-record(state, {entries, nodes, itc}).
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1,
@@ -53,18 +53,24 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Key},
-            State = #state{entries = Entries, nodes = Nodes}) ->
-    Id = create_id(),
+            State = #state{entries = Entries, nodes = Nodes,
+                           itc = Itc}) ->
+    ItcAdd = itc:event(Itc),
     lists:foreach(fun (Pid) ->
-                          gen_server:cast(Pid, {add, Id, Key})
+                          gen_server:cast(Pid, {add, ItcAdd, Key})
                   end,
                   sets:to_list(Nodes)),
-    {noreply, State#state{entries = Entries#{Id => Key}}};
-handle_cast({add, Id, Key},
-            State = #state{entries = Entries}) ->
-    {noreply, State#state{entries = Entries#{Id => Key}}};
+    {noreply,
+     State#state{entries = Entries#{ItcAdd => Key},
+                 itc = ItcAdd}};
+handle_cast({add, ItcAdd, Key},
+            State = #state{entries = Entries, itc = Itc}) ->
+    {noreply,
+     State#state{entries = Entries#{ItcAdd => Key},
+                 itc = itc:event(itc:join(Itc, ItcAdd))}};
 handle_cast({remove, Key},
-            State = #state{entries = Entries, nodes = Nodes}) ->
+            State = #state{entries = Entries, nodes = Nodes,
+                           itc = Itc}) ->
     RemovableElements = maps:filter(fun (_Id, EntryKey) ->
                                             EntryKey =:= Key
                                     end,
@@ -72,34 +78,41 @@ handle_cast({remove, Key},
     RemovableTasks = [{Pid, Id}
                       || {Id, _Key} <- maps:to_list(RemovableElements),
                          Pid <- sets:to_list(Nodes)],
+    ItcDel = itc:event(Itc),
     lists:foreach(fun ({Pid, Id}) ->
-                          gen_server:cast(Pid, {delete, Id})
+                          gen_server:cast(Pid, {delete, Id, ItcDel})
                   end,
                   RemovableTasks),
     NewEntries = maps:filter(fun (_Id, EntryKey) ->
                                      EntryKey =/= Key
                              end,
                              Entries),
-    {noreply, State#state{entries = NewEntries}};
-handle_cast({delete, Id},
-            State = #state{entries = Entries}) ->
     {noreply,
-     State#state{entries = maps:remove(Id, Entries)}};
+     State#state{entries = NewEntries, itc = ItcDel}};
+handle_cast({delete, Id, ItcDel},
+            State = #state{entries = Entries, itc = Itc}) ->
+    {noreply,
+     State#state{entries = maps:remove(Id, Entries),
+                 itc = itc:event(itc:join(Itc, ItcDel))}};
 handle_cast({connect, Pid},
-            State = #state{nodes = Nodes}) ->
+            State = #state{nodes = Nodes, itc = Itc}) ->
     NewNodes = sets:add_element(Pid, Nodes),
-    join(Pid, sets:add_element(self(), NewNodes)),
-    {noreply, State#state{nodes = NewNodes}};
-handle_cast({join, OtherNodes},
-            State = #state{nodes = Nodes}) ->
+    [NewItc, ItcFork] = itc:fork(Itc),
+    join(Pid, ItcFork, sets:add_element(self(), NewNodes)),
+    {noreply, State#state{nodes = NewNodes, itc = NewItc}};
+handle_cast({join, ItcFork, OtherNodes},
+            State = #state{nodes = Nodes, itc = Itc}) ->
     NormalizedNodes = sets:del_element(self(), OtherNodes),
     if NormalizedNodes =:= Nodes -> {noreply, State};
        true ->
            NewNodes = sets:union(NormalizedNodes, Nodes),
            AllNodes = sets:add_element(self(), NewNodes),
-           lists:foreach(fun (Pid) -> join(Pid, AllNodes) end,
+           lists:foreach(fun (Pid) -> join(Pid, ItcFork, AllNodes)
+                         end,
                          sets:to_list(NewNodes)),
-           {noreply, State#state{nodes = NewNodes}}
+           {noreply,
+            State#state{nodes = NewNodes,
+                        itc = itc:event(itc:join(Itc, ItcFork))}}
     end;
 handle_cast(_Event, State) -> {noreply, State}.
 
@@ -124,9 +137,9 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %% Internal functions
 %%====================================================================
 
-create_id() -> uuid:new(self()).
-
 init_state() ->
-    #state{entries = maps:new(), nodes = sets:new()}.
+    #state{entries = maps:new(), nodes = sets:new(),
+           itc = itc:seed()}.
 
-join(Pid, Nodes) -> gen_server:cast(Pid, {join, Nodes}).
+join(Pid, Itc, Nodes) ->
+    gen_server:cast(Pid, {join, Itc, Nodes}).

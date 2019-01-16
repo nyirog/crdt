@@ -5,8 +5,7 @@
   {mod, { crdt, []}},
   {applications,
    [kernel,
-    stdlib,
-    uuid
+    stdlib
    ]},
   {env,[]},
   {modules, [crdt, crdt_server, crdt_sup]},
