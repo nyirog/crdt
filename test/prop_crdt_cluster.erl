@@ -11,7 +11,7 @@
 -define(SERVER, crdt_server).
 -define(NODES, [node_a, node_b, node_c]).
 
--record(state, {nodes, members}).
+-record(state, {nodes, members, command}).
 
 test() ->
     proper:quickcheck(?MODULE:prop_crdt_cluster()).
@@ -57,32 +57,31 @@ prop_crdt_server_cluster() ->
             ).
 
 
-initial_state() -> #state{nodes = ordsets:new(), members = ordsets:new()}.
+initial_state() -> #state{nodes = ordsets:new(), members = ordsets:new(), command = connect}.
 
 command(_S) ->
     oneof([{call, ?SERVER, add, [any_node(), member()]},
            {call, ?SERVER, remove, [any_node(), member()]},
-           {call, ?MODULE, connect, [any_node(), any_node()]}]).
+           {call, ?SERVER, connect, [any_node(), any_node()]}]).
 
-precondition(_S, {call, _, connect, [NodeA, NodeB]}) -> NodeA =/= NodeB;
+precondition(S, {call, _, connect, [NodeA, NodeB]}) -> NodeA =/= NodeB andalso S#state.command =:= connect;
 precondition(S, {call, _, add, [Node, _]}) -> ordsets:is_element(Node, S#state.nodes);
 precondition(S, {call, _, remove, [Node, _]}) -> ordsets:is_element(Node, S#state.nodes).
 
 next_state(S, _Result, {call, _, connect, Nodes}) ->
-    S#state{nodes = ordsets:union(Nodes, S#state.nodes)};
+    timer:sleep(1),
+    S#state{nodes = ordsets:union(Nodes, S#state.nodes), command = connect};
 
 next_state(S, _Result, {call, _, add, [_Node, Member]}) ->
-    S#state{members = ordsets:add_element(Member, S#state.members)};
+    timer:sleep(1),
+    S#state{members = ordsets:add_element(Member, S#state.members), command = add};
 
 next_state(S, _Result, {call, _, remove, [_Node, Member]}) ->
-    S#state{members = ordsets:del_element(Member, S#state.members)}.
+    timer:sleep(1),
+    S#state{members = ordsets:del_element(Member, S#state.members), command = remove}.
 
 postcondition(_State, _Command, _Result) -> true.
 
 member() -> elements(lists:seq(1, 5)).
 
 any_node() -> elements(?NODES).
-
-connect(Pid, Node) ->
-    ?SERVER:connect(Pid, Node),
-    ?SERVER:nodes(Pid).
