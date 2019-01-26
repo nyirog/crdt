@@ -44,10 +44,11 @@ handle_call(members, _From,
      State};
 handle_call({member, Member}, _From,
             State = #state{members = Members}) ->
-    {reply, lists:member(Member, maps:values(Members)), State};
+    {reply, lists:member(Member, maps:values(Members)),
+     State};
 handle_call(nodes, _From,
             State = #state{nodes = Nodes}) ->
-    {reply, sets:to_list(Nodes), State};
+    {reply, Nodes, State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
@@ -59,7 +60,7 @@ handle_cast({add, Member},
     lists:foreach(fun (Pid) ->
                           gen_server:cast(Pid, {add, ItcAdd, Member})
                   end,
-                  sets:to_list(Nodes)),
+                  Nodes),
     {noreply,
      State#state{members = Members#{ItcAdd => Member},
                  itc = ItcAdd}};
@@ -71,13 +72,14 @@ handle_cast({add, ItcAdd, Member},
 handle_cast({remove, Member},
             State = #state{members = Members, nodes = Nodes,
                            itc = Itc}) ->
-    RemovableElements = maps:filter(fun (_Id, EntryMember) ->
+    RemovableElements = maps:filter(fun (_Id,
+                                         EntryMember) ->
                                             EntryMember =:= Member
                                     end,
                                     Members),
     RemovableTasks = [{Pid, Id}
                       || {Id, _Member} <- maps:to_list(RemovableElements),
-                         Pid <- sets:to_list(Nodes)],
+                         Pid <- Nodes],
     ItcDel = itc:event(Itc),
     lists:foreach(fun ({Pid, Id}) ->
                           gen_server:cast(Pid, {delete, Id, ItcDel})
@@ -96,20 +98,20 @@ handle_cast({delete, Id, ItcDel},
                  itc = itc:event(itc:join(Itc, ItcDel))}};
 handle_cast({connect, Pid},
             State = #state{nodes = Nodes, itc = Itc}) ->
-    NewNodes = sets:add_element(Pid, Nodes),
+    NewNodes = lists:usort([Pid | Nodes]),
     [NewItc, ItcFork] = itc:fork(Itc),
-    join(Pid, ItcFork, sets:add_element(self(), NewNodes)),
+    join(Pid, ItcFork, lists:usort([self() | NewNodes])),
     {noreply, State#state{nodes = NewNodes, itc = NewItc}};
 handle_cast({join, ItcFork, OtherNodes},
             State = #state{nodes = Nodes, itc = Itc}) ->
-    NormalizedNodes = sets:del_element(self(), OtherNodes),
+    NormalizedNodes = lists:delete(self(), OtherNodes),
     if NormalizedNodes =:= Nodes -> {noreply, State};
        true ->
-           NewNodes = sets:union(NormalizedNodes, Nodes),
-           AllNodes = sets:add_element(self(), NewNodes),
+           NewNodes = lists:umerge(NormalizedNodes, Nodes),
+           AllNodes = lists:usort([self() | NewNodes]),
            lists:foreach(fun (Pid) -> join(Pid, ItcFork, AllNodes)
                          end,
-                         sets:to_list(NewNodes)),
+                         NewNodes),
            {noreply,
             State#state{nodes = NewNodes,
                         itc = itc:event(itc:join(Itc, ItcFork))}}
@@ -122,14 +124,16 @@ handle_info(_Info, State) -> {noreply, State}.
 
 add(Pid, Member) -> gen_server:cast(Pid, {add, Member}).
 
-remove(Pid, Member) -> gen_server:cast(Pid, {remove, Member}).
+remove(Pid, Member) ->
+    gen_server:cast(Pid, {remove, Member}).
 
 connect(Pid, Node) ->
     gen_server:cast(Pid, {connect, Node}).
 
 members(Pid) -> gen_server:call(Pid, members).
 
-member(Pid, Member) -> gen_server:call(Pid, {member, Member}).
+member(Pid, Member) ->
+    gen_server:call(Pid, {member, Member}).
 
 nodes(Pid) -> gen_server:call(Pid, nodes).
 
@@ -138,7 +142,7 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %%====================================================================
 
 init_state() ->
-    #state{members = maps:new(), nodes = sets:new(),
+    #state{members = maps:new(), nodes = [],
            itc = itc:seed()}.
 
 join(Pid, Itc, Nodes) ->
