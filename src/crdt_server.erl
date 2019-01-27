@@ -37,14 +37,10 @@ terminate(_Reason, _State) -> ok.
 
 %%--------------------------------------------------------------------
 
-handle_call(members, _From,
-            State = #state{members = Members}) ->
-    {reply,
-     sets:to_list(sets:from_list(maps:values(Members))),
-     State};
-handle_call({member, Member}, _From,
-            State = #state{members = Members}) ->
-    {reply, lists:member(Member, maps:values(Members)),
+handle_call(members, _From, State) ->
+    {reply, lists:usort(list_members(State)), State};
+handle_call({member, Member}, _From, State) ->
+    {reply, lists:member(Member, list_members(State)),
      State};
 handle_call(nodes, _From,
             State = #state{nodes = Nodes}) ->
@@ -62,39 +58,34 @@ handle_cast({add, Member},
                   end,
                   Nodes),
     {noreply,
-     State#state{members = Members#{ItcAdd => Member},
+     State#state{members = [{ItcAdd, Member} | Members],
                  itc = ItcAdd}};
 handle_cast({add, ItcAdd, Member},
             State = #state{members = Members, itc = Itc}) ->
     {noreply,
-     State#state{members = Members#{ItcAdd => Member},
+     State#state{members = [{ItcAdd, Member} | Members],
                  itc = itc:event(itc:join(Itc, ItcAdd))}};
 handle_cast({remove, Member},
             State = #state{members = Members, nodes = Nodes,
                            itc = Itc}) ->
-    RemovableElements = maps:filter(fun (_Id,
-                                         EntryMember) ->
-                                            EntryMember =:= Member
-                                    end,
-                                    Members),
+    RemovableElements = [V1
+                         || V1 <- Members, value_eq(V1, Member)],
     RemovableTasks = [{Pid, Id}
-                      || {Id, _Member} <- maps:to_list(RemovableElements),
-                         Pid <- Nodes],
+                      || {Id, _Member} <- RemovableElements, Pid <- Nodes],
     ItcDel = itc:event(Itc),
     lists:foreach(fun ({Pid, Id}) ->
                           gen_server:cast(Pid, {delete, Id, ItcDel})
                   end,
                   RemovableTasks),
-    NewMembers = maps:filter(fun (_Id, EntryMember) ->
-                                     EntryMember =/= Member
-                             end,
-                             Members),
+    NewMembers = [V2
+                  || V2 <- Members, value_neq(V2, Member)],
     {noreply,
      State#state{members = NewMembers, itc = ItcDel}};
 handle_cast({delete, Id, ItcDel},
             State = #state{members = Members, itc = Itc}) ->
     {noreply,
-     State#state{members = maps:remove(Id, Members),
+     State#state{members =
+                     [V3 || V3 <- Members, id_neq(V3, Id)],
                  itc = itc:event(itc:join(Itc, ItcDel))}};
 handle_cast({connect, Pid},
             State = #state{nodes = Nodes, itc = Itc}) ->
@@ -117,6 +108,12 @@ handle_cast({join, ItcFork, OtherNodes},
                         itc = itc:event(itc:join(Itc, ItcFork))}}
     end;
 handle_cast(_Event, State) -> {noreply, State}.
+
+value_eq({_Id, Value}, Member) -> Value =:= Member.
+
+value_neq({_Id, Value}, Member) -> Value =/= Member.
+
+id_neq({MemberId, _Value}, Id) -> Id =/= MemberId.
 
 handle_info(_Info, State) -> {noreply, State}.
 
@@ -142,8 +139,10 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %%====================================================================
 
 init_state() ->
-    #state{members = maps:new(), nodes = [],
-           itc = itc:seed()}.
+    #state{members = [], nodes = [], itc = itc:seed()}.
 
 join(Pid, Itc, Nodes) ->
     gen_server:cast(Pid, {join, Itc, Nodes}).
+
+list_members(#state{members = Members}) ->
+    [Value || {_Id, Value} <- Members].
