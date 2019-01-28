@@ -52,22 +52,19 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Value},
-            State = #state{history = History, nodes = Nodes,
-                           itc = Itc}) ->
+            State = #state{nodes = Nodes, itc = Itc}) ->
     ItcEvent = itc:event(Itc),
     lists:foreach(fun (Pid) ->
                           gen_server:cast(Pid, {add, ItcEvent, Value})
                   end,
                   Nodes),
     {noreply,
-     State#state{history =
-                     [#event{itc = ItcEvent, value = Value} | History],
+     State#state{history = add_event(ItcEvent, Value, State),
                  itc = ItcEvent}};
 handle_cast({add, ItcEvent, Value},
-            State = #state{history = History, itc = Itc}) ->
+            State = #state{itc = Itc}) ->
     {noreply,
-     State#state{history =
-                     [#event{itc = ItcEvent, value = Value} | History],
+     State#state{history = add_event(ItcEvent, Value, State),
                  itc = itc:event(itc:join(Itc, ItcEvent))}};
 handle_cast({remove, Value},
             State = #state{history = History, nodes = Nodes,
@@ -142,3 +139,9 @@ join(Pid, Itc, Nodes) ->
 
 list_members(#state{history = History}) ->
     [E#event.value || E <- History].
+
+add_event(Itc, Value, #state{history = History}) ->
+    lists:usort(fun (E, F) ->
+                        itc:leq(F#event.itc, E#event.itc)
+                end,
+                [#event{itc = Itc, value = Value} | History]).
