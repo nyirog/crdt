@@ -7,7 +7,9 @@
 
 -behaviour(gen_server).
 
--record(state, {members, nodes, itc}).
+-record(state, {history, nodes, itc}).
+
+-record(event, {itc, value}).
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1,
@@ -39,8 +41,8 @@ terminate(_Reason, _State) -> ok.
 
 handle_call(members, _From, State) ->
     {reply, lists:usort(list_members(State)), State};
-handle_call({member, Member}, _From, State) ->
-    {reply, lists:member(Member, list_members(State)),
+handle_call({member, Value}, _From, State) ->
+    {reply, lists:member(Value, list_members(State)),
      State};
 handle_call(nodes, _From,
             State = #state{nodes = Nodes}) ->
@@ -49,44 +51,44 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
-handle_cast({add, Member},
-            State = #state{members = Members, nodes = Nodes,
+handle_cast({add, Value},
+            State = #state{history = History, nodes = Nodes,
                            itc = Itc}) ->
-    ItcAdd = itc:event(Itc),
+    ItcEvent = itc:event(Itc),
     lists:foreach(fun (Pid) ->
-                          gen_server:cast(Pid, {add, ItcAdd, Member})
+                          gen_server:cast(Pid, {add, ItcEvent, Value})
                   end,
                   Nodes),
     {noreply,
-     State#state{members = [{ItcAdd, Member} | Members],
-                 itc = ItcAdd}};
-handle_cast({add, ItcAdd, Member},
-            State = #state{members = Members, itc = Itc}) ->
+     State#state{history =
+                     [#event{itc = ItcEvent, value = Value} | History],
+                 itc = ItcEvent}};
+handle_cast({add, ItcEvent, Value},
+            State = #state{history = History, itc = Itc}) ->
     {noreply,
-     State#state{members = [{ItcAdd, Member} | Members],
-                 itc = itc:event(itc:join(Itc, ItcAdd))}};
-handle_cast({remove, Member},
-            State = #state{members = Members, nodes = Nodes,
+     State#state{history =
+                     [#event{itc = ItcEvent, value = Value} | History],
+                 itc = itc:event(itc:join(Itc, ItcEvent))}};
+handle_cast({remove, Value},
+            State = #state{history = History, nodes = Nodes,
                            itc = Itc}) ->
-    RemovableElements = [V1
-                         || V1 <- Members, value_eq(V1, Member)],
-    RemovableTasks = [{Pid, Id}
-                      || {Id, _Member} <- RemovableElements, Pid <- Nodes],
-    ItcDel = itc:event(Itc),
-    lists:foreach(fun ({Pid, Id}) ->
-                          gen_server:cast(Pid, {delete, Id, ItcDel})
+    ItcEvent = itc:event(Itc),
+    lists:foreach(fun ({Pid, ItcDel}) ->
+                          gen_server:cast(Pid, {delete, ItcDel, ItcEvent})
                   end,
-                  RemovableTasks),
-    NewMembers = [V2
-                  || V2 <- Members, value_neq(V2, Member)],
+                  [{Pid, E#event.itc}
+                   || E <- History, Pid <- Nodes,
+                      E#event.value =:= Value]),
     {noreply,
-     State#state{members = NewMembers, itc = ItcDel}};
-handle_cast({delete, Id, ItcDel},
-            State = #state{members = Members, itc = Itc}) ->
+     State#state{history =
+                     [E || E <- History, E#event.value =/= Value],
+                 itc = ItcEvent}};
+handle_cast({delete, ItcDel, ItcEvent},
+            State = #state{history = History, itc = Itc}) ->
     {noreply,
-     State#state{members =
-                     [V3 || V3 <- Members, id_neq(V3, Id)],
-                 itc = itc:event(itc:join(Itc, ItcDel))}};
+     State#state{history =
+                     [E || E <- History, E#event.itc =/= ItcDel],
+                 itc = itc:event(itc:join(Itc, ItcEvent))}};
 handle_cast({connect, Pid},
             State = #state{nodes = Nodes, itc = Itc}) ->
     NewNodes = lists:usort([Pid | Nodes]),
@@ -109,28 +111,22 @@ handle_cast({join, ItcFork, OtherNodes},
     end;
 handle_cast(_Event, State) -> {noreply, State}.
 
-value_eq({_Id, Value}, Member) -> Value =:= Member.
-
-value_neq({_Id, Value}, Member) -> Value =/= Member.
-
-id_neq({MemberId, _Value}, Id) -> Id =/= MemberId.
-
 handle_info(_Info, State) -> {noreply, State}.
 
 %%--------------------------------------------------------------------
 
-add(Pid, Member) -> gen_server:cast(Pid, {add, Member}).
+add(Pid, Value) -> gen_server:cast(Pid, {add, Value}).
 
-remove(Pid, Member) ->
-    gen_server:cast(Pid, {remove, Member}).
+remove(Pid, Value) ->
+    gen_server:cast(Pid, {remove, Value}).
 
 connect(Pid, Node) ->
     gen_server:cast(Pid, {connect, Node}).
 
 members(Pid) -> gen_server:call(Pid, members).
 
-member(Pid, Member) ->
-    gen_server:call(Pid, {member, Member}).
+member(Pid, Value) ->
+    gen_server:call(Pid, {member, Value}).
 
 nodes(Pid) -> gen_server:call(Pid, nodes).
 
@@ -139,10 +135,10 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %%====================================================================
 
 init_state() ->
-    #state{members = [], nodes = [], itc = itc:seed()}.
+    #state{history = [], nodes = [], itc = itc:seed()}.
 
 join(Pid, Itc, Nodes) ->
     gen_server:cast(Pid, {join, Itc, Nodes}).
 
-list_members(#state{members = Members}) ->
-    [Value || {_Id, Value} <- Members].
+list_members(#state{history = History}) ->
+    [E#event.value || E <- History].
