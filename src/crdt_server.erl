@@ -67,24 +67,21 @@ handle_cast({add, ItcEvent, Value},
      State#state{history = add_event(ItcEvent, Value, State),
                  itc = itc:event(itc:join(Itc, ItcEvent))}};
 handle_cast({remove, Value},
-            State = #state{history = History, nodes = Nodes,
-                           itc = Itc}) ->
+            State = #state{nodes = Nodes, itc = Itc}) ->
     ItcEvent = itc:event(Itc),
-    lists:foreach(fun ({Pid, ItcDel}) ->
-                          gen_server:cast(Pid, {delete, ItcDel, ItcEvent})
+    Removables = filter_event_itcs(Value, State),
+    lists:foreach(fun (Pid) ->
+                          gen_server:cast(Pid,
+                                          {remove, Removables, ItcEvent})
                   end,
-                  [{Pid, E#event.itc}
-                   || E <- History, Pid <- Nodes,
-                      E#event.value =:= Value]),
+                  Nodes),
     {noreply,
-     State#state{history =
-                     [E || E <- History, E#event.value =/= Value],
+     State#state{history = del_event(Removables, State),
                  itc = ItcEvent}};
-handle_cast({delete, ItcDel, ItcEvent},
-            State = #state{history = History, itc = Itc}) ->
+handle_cast({remove, Removables, ItcEvent},
+            State = #state{itc = Itc}) ->
     {noreply,
-     State#state{history =
-                     [E || E <- History, E#event.itc =/= ItcDel],
+     State#state{history = del_event(Removables, State),
                  itc = itc:event(itc:join(Itc, ItcEvent))}};
 handle_cast({connect, Pid},
             State = #state{nodes = Nodes, itc = Itc}) ->
@@ -145,3 +142,11 @@ add_event(Itc, Value, #state{history = History}) ->
                         itc:leq(F#event.itc, E#event.itc)
                 end,
                 [#event{itc = Itc, value = Value} | History]).
+
+filter_event_itcs(Value, #state{history = History}) ->
+    [E#event.itc || E <- History, E#event.value =:= Value].
+
+del_event(Removables, #state{history = History}) ->
+    [E
+     || E <- History,
+        not lists:member(E#event.itc, Removables)].
