@@ -135,15 +135,20 @@ sync_event(Event, #state{nodes = Nodes}) ->
 
 add_event(Event = #event{action = add},
           #state{history = History}) ->
+    sort_history([Event | History]);
+add_event(Event = #event{action = remove,
+                         value = Removables},
+          #state{history = History}) ->
+    CleanedHistory = [E
+                      || E <- History,
+                         not lists:member(E#event.itc, Removables)],
+    sort_history([Event | CleanedHistory]).
+
+sort_history(History) ->
     lists:usort(fun (E, F) ->
                         itc:leq(F#event.itc, E#event.itc)
                 end,
-                [Event | History]);
-add_event(#event{value = Removables},
-          #state{history = History}) ->
-    [E
-     || E <- History,
-        not lists:member(E#event.itc, Removables)].
+                History).
 
 filter_event_itcs(Value, #state{history = History}) ->
     [E#event.itc || E <- History, E#event.value =:= Value].
