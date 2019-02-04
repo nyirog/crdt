@@ -49,7 +49,9 @@ add_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
 remove_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
     timer:sleep(1),
     crdt_server:add(PidA, 42),
+    timer:sleep(1),
     crdt_server:add(PidA, 24),
+    timer:sleep(1),
     crdt_server:remove(PidA, 42),
     timer:sleep(1),
     [?_assertNot(crdt_server:member(PidB, 42)),

@@ -47,52 +47,54 @@ handle_call({member, Value}, _From, State) ->
 handle_call(nodes, _From,
             State = #state{nodes = Nodes}) ->
     {reply, Nodes, State};
+handle_call({join, NewNode}, From,
+            State = #state{itc = Itc}) ->
+    [ItcLeft, ItcRight] = itc:fork(Itc),
+    gen_server:reply(From, ItcRight),
+    NewEvent = #event{itc = itc:event(ItcLeft),
+                      action = join, value = [NewNode, self()]},
+    NewState = handle_event(NewEvent, State),
+    update_events(NewNode, NewState#state.history),
+    sync_event(NewEvent, NewState),
+    {noreply, NewState};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Value}, State = #state{itc = Itc}) ->
-    ItcEvent = itc:event(Itc),
-    Event = #event{itc = ItcEvent, action = add,
+    Event = #event{itc = itc:event(Itc), action = add,
                    value = Value},
     sync_event(Event, State),
-    {noreply,
-     State#state{history = add_event(Event, State),
-                 itc = ItcEvent}};
+    {noreply, handle_event(Event, State)};
 handle_cast({remove, Value},
             State = #state{itc = Itc}) ->
-    ItcEvent = itc:event(Itc),
-    Event = #event{itc = ItcEvent, action = remove,
+    Event = #event{itc = itc:event(Itc), action = remove,
                    value = filter_event_itcs(Value, State)},
     sync_event(Event, State),
-    {noreply,
-     State#state{history = add_event(Event, State),
-                 itc = ItcEvent}};
-handle_cast({sync, Event = #event{itc = ItcEvent}},
+    {noreply, handle_event(Event, State)};
+handle_cast({update, Event},
             State = #state{itc = Itc}) ->
+    NewState = handle_event(Event, State),
+    NewItc = itc:event(itc:join(NewState#state.itc, Itc)),
+    {noreply, NewState#state{itc = NewItc}};
+handle_cast({sync, ItcEvent, Node}, State) ->
+    UnseenEvents = list_unseen_events(ItcEvent, State),
+    update_events(Node, UnseenEvents),
+    #event{itc = LastSeenItc} =
+        get_last_seen_event(UnseenEvents, State),
+    gen_server:cast(Node, {sync_from, LastSeenItc, self()}),
+    {noreply, State};
+handle_cast({sync_from, ItcEvent, Node}, State) ->
+    Events = list_unseen_events(ItcEvent, State),
+    update_events(Node, Events),
+    {noreply, State};
+handle_cast({connect, Node},
+            State = #state{nodes = Nodes, history = History}) ->
+    update_events(Node, History),
+    ItcEvent = gen_server:call(Node, {join, self()}),
     {noreply,
-     State#state{history = add_event(Event, State),
-                 itc = itc:event(itc:join(Itc, ItcEvent))}};
-handle_cast({connect, Pid},
-            State = #state{nodes = Nodes, itc = Itc}) ->
-    NewNodes = lists:usort([Pid | Nodes]),
-    [NewItc, ItcFork] = itc:fork(Itc),
-    join(Pid, ItcFork, lists:usort([self() | NewNodes])),
-    {noreply, State#state{nodes = NewNodes, itc = NewItc}};
-handle_cast({join, ItcFork, OtherNodes},
-            State = #state{nodes = Nodes, itc = Itc}) ->
-    NormalizedNodes = lists:delete(self(), OtherNodes),
-    if NormalizedNodes =:= Nodes -> {noreply, State};
-       true ->
-           NewNodes = lists:umerge(NormalizedNodes, Nodes),
-           AllNodes = lists:usort([self() | NewNodes]),
-           lists:foreach(fun (Pid) -> join(Pid, ItcFork, AllNodes)
-                         end,
-                         NewNodes),
-           {noreply,
-            State#state{nodes = NewNodes,
-                        itc = itc:event(itc:join(Itc, ItcFork))}}
-    end;
+     State#state{itc = ItcEvent,
+                 nodes = add_node(Node, Nodes)}};
 handle_cast(_Event, State) -> {noreply, State}.
 
 handle_info(_Info, State) -> {noreply, State}.
@@ -119,36 +121,68 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %%====================================================================
 
 init_state() ->
-    #state{history = [], nodes = [], itc = itc:seed()}.
-
-join(Pid, Itc, Nodes) ->
-    gen_server:cast(Pid, {join, Itc, Nodes}).
+    Itc = itc:seed(),
+    Event = #event{action = init, itc = Itc, value = none},
+    #state{history = [Event], nodes = [], itc = Itc}.
 
 list_members(#state{history = History}) ->
     [E#event.value || E <- History, E#event.action =:= add].
 
-sync_event(Event, #state{nodes = Nodes}) ->
+sync_event(#event{itc = Itc}, #state{nodes = Nodes}) ->
     lists:foreach(fun (Pid) ->
-                          gen_server:cast(Pid, {sync, Event})
+                          gen_server:cast(Pid, {sync, Itc, self()})
                   end,
                   Nodes).
 
-add_event(Event = #event{action = add},
-          #state{history = History}) ->
-    sort_history([Event | History]);
-add_event(Event = #event{action = remove,
-                         value = Removables},
-          #state{history = History}) ->
+update_events(Node, History) ->
+    lists:foreach(fun (Event) ->
+                          gen_server:cast(Node, {update, Event})
+                  end,
+                  History).
+
+list_unseen_events(ItcEvent,
+                   #state{history = History}) ->
+    lists:takewhile(fun (#event{itc = Itc}) ->
+                            not itc:leq(Itc, ItcEvent)
+                    end,
+                    History).
+
+get_last_seen_event(UnseenEvents,
+                    #state{history = History}) ->
+    Last = erlang:min(erlang:length(UnseenEvents) + 1,
+                      erlang:length(History)),
+    lists:nth(Last, History).
+
+handle_event(#event{action = init}, State) -> State;
+handle_event(Event = #event{action = join,
+                            value = [LeftNode, RightNode], itc = Itc},
+             State = #state{history = History, nodes = Nodes}) ->
+    State#state{history = add_event(Event, History),
+                itc = Itc,
+                nodes = add_node(RightNode, add_node(LeftNode, Nodes))};
+handle_event(Event = #event{action = add, itc = Itc},
+             State = #state{history = History}) ->
+    State#state{history = add_event(Event, History),
+                itc = Itc};
+handle_event(Event = #event{action = remove,
+                            value = Removables, itc = Itc},
+             State = #state{history = History}) ->
     CleanedHistory = [E
                       || E <- History,
                          not lists:member(E#event.itc, Removables)],
-    sort_history([Event | CleanedHistory]).
+    State#state{history = add_event(Event, CleanedHistory),
+                itc = Itc}.
 
-sort_history(History) ->
+add_event(Event, History) ->
     lists:usort(fun (E, F) ->
                         itc:leq(F#event.itc, E#event.itc)
                 end,
-                History).
+                [Event | History]).
+
+add_node(Node, Nodes) ->
+    if Node =:= self() -> Nodes;
+       true -> lists:usort([Node | Nodes])
+    end.
 
 filter_event_itcs(Value, #state{history = History}) ->
     [E#event.itc || E <- History, E#event.value =:= Value].
