@@ -7,9 +7,9 @@
 
 -behaviour(gen_server).
 
--record(state, {history, nodes, itc}).
+-record(state, {history, nodes, clock}).
 
--record(event, {itc, action, value}).
+-record(event, {clock, action, value}).
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1,
@@ -48,10 +48,10 @@ handle_call(nodes, _From,
             State = #state{nodes = Nodes}) ->
     {reply, Nodes, State};
 handle_call({join, NewNode}, From,
-            State = #state{itc = Itc}) ->
-    [ItcLeft, ItcRight] = itc:fork(Itc),
-    gen_server:reply(From, ItcRight),
-    NewEvent = #event{itc = itc:event(ItcLeft),
+            State = #state{clock = Clock}) ->
+    [LeftClock, RightClock] = itc:fork(Clock),
+    gen_server:reply(From, RightClock),
+    NewEvent = #event{clock = itc:event(LeftClock),
                       action = join, value = [NewNode, self()]},
     NewState = handle_event(NewEvent, State),
     update_events(NewNode, NewState#state.history),
@@ -61,39 +61,38 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
-handle_cast({add, Value}, State = #state{itc = Itc}) ->
-    Event = #event{itc = itc:event(Itc), action = add,
+handle_cast({add, Value}, State = #state{clock = Clock}) ->
+    Event = #event{clock = itc:event(Clock), action = add,
                    value = Value},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({remove, Value},
-            State = #state{itc = Itc}) ->
-    Event = #event{itc = itc:event(Itc), action = remove,
+            State = #state{clock = Clock}) ->
+    Event = #event{clock = itc:event(Clock), action = remove,
                    value = filter_event_itcs(Value, State)},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({update, Event},
-            State = #state{itc = Itc}) ->
+            State = #state{clock = Clock}) ->
     NewState = handle_event(Event, State),
-    NewItc = itc:event(itc:join(NewState#state.itc, Itc)),
-    {noreply, NewState#state{itc = NewItc}};
-handle_cast({sync, ItcEvent, Node}, State) ->
-    UnseenEvents = list_unseen_events(ItcEvent, State),
+    NewClock = itc:event(itc:join(NewState#state.clock, Clock)),
+    {noreply, NewState#state{clock = NewClock}};
+handle_cast({sync, Clock, Node}, State) ->
+    UnseenEvents = list_unseen_events(Clock, State),
     update_events(Node, UnseenEvents),
-    #event{itc = LastSeenItc} =
+    #event{clock = LastSeenClock} =
         get_last_seen_event(UnseenEvents, State),
-    gen_server:cast(Node, {sync_from, LastSeenItc, self()}),
+    gen_server:cast(Node, {sync_from, LastSeenClock, self()}),
     {noreply, State};
-handle_cast({sync_from, ItcEvent, Node}, State) ->
-    Events = list_unseen_events(ItcEvent, State),
+handle_cast({sync_from, Clock, Node}, State) ->
+    Events = list_unseen_events(Clock, State),
     update_events(Node, Events),
     {noreply, State};
 handle_cast({connect, Node},
             State = #state{nodes = Nodes, history = History}) ->
     update_events(Node, History),
-    ItcEvent = gen_server:call(Node, {join, self()}),
     {noreply,
-     State#state{itc = ItcEvent,
+     State#state{clock = gen_server:call(Node, {join, self()}),
                  nodes = add_node(Node, Nodes)}};
 handle_cast(_Event, State) -> {noreply, State}.
 
@@ -121,16 +120,16 @@ nodes(Pid) -> gen_server:call(Pid, nodes).
 %%====================================================================
 
 init_state() ->
-    Itc = itc:seed(),
-    Event = #event{action = init, itc = Itc, value = none},
-    #state{history = [Event], nodes = [], itc = Itc}.
+    Clock = itc:seed(),
+    Event = #event{action = init, clock = Clock, value = none},
+    #state{history = [Event], nodes = [], clock = Clock}.
 
 list_members(#state{history = History}) ->
     [E#event.value || E <- History, E#event.action =:= add].
 
-sync_event(#event{itc = Itc}, #state{nodes = Nodes}) ->
+sync_event(#event{clock = Clock}, #state{nodes = Nodes}) ->
     lists:foreach(fun (Pid) ->
-                          gen_server:cast(Pid, {sync, Itc, self()})
+                          gen_server:cast(Pid, {sync, Clock, self()})
                   end,
                   Nodes).
 
@@ -140,10 +139,10 @@ update_events(Node, History) ->
                   end,
                   History).
 
-list_unseen_events(ItcEvent,
+list_unseen_events(Clock,
                    #state{history = History}) ->
-    lists:takewhile(fun (#event{itc = Itc}) ->
-                            not itc:leq(Itc, ItcEvent)
+    lists:takewhile(fun (E) ->
+                            not itc:leq(E#event.clock, Clock)
                     end,
                     History).
 
@@ -155,27 +154,27 @@ get_last_seen_event(UnseenEvents,
 
 handle_event(#event{action = init}, State) -> State;
 handle_event(Event = #event{action = join,
-                            value = [LeftNode, RightNode], itc = Itc},
+                            value = [LeftNode, RightNode], clock = Clock},
              State = #state{history = History, nodes = Nodes}) ->
     State#state{history = add_event(Event, History),
-                itc = Itc,
+                clock = Clock,
                 nodes = add_node(RightNode, add_node(LeftNode, Nodes))};
-handle_event(Event = #event{action = add, itc = Itc},
+handle_event(Event = #event{action = add, clock = Clock},
              State = #state{history = History}) ->
     State#state{history = add_event(Event, History),
-                itc = Itc};
+                clock = Clock};
 handle_event(Event = #event{action = remove,
-                            value = Removables, itc = Itc},
+                            value = Removables, clock = Clock},
              State = #state{history = History}) ->
     CleanedHistory = [E
                       || E <- History,
-                         not lists:member(E#event.itc, Removables)],
+                         not lists:member(E#event.clock, Removables)],
     State#state{history = add_event(Event, CleanedHistory),
-                itc = Itc}.
+                clock = Clock}.
 
 add_event(Event, History) ->
     lists:usort(fun (E, F) ->
-                        itc:leq(F#event.itc, E#event.itc)
+                        itc:leq(F#event.clock, E#event.clock)
                 end,
                 [Event | History]).
 
@@ -185,4 +184,4 @@ add_node(Node, Nodes) ->
     end.
 
 filter_event_itcs(Value, #state{history = History}) ->
-    [E#event.itc || E <- History, E#event.value =:= Value].
+    [E#event.clock || E <- History, E#event.value =:= Value].
