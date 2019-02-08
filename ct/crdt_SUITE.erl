@@ -10,9 +10,9 @@ groups() ->
     [{actions, [shuffle, {repeat, 5}], [add_is_propagated, remove_is_propagated]}].
 
 init_per_testcase(_TestName, Config) ->
-    {ok, PidA} = crdt_server:start_link(),
-    {ok, PidB} = crdt_server:start_link(),
-    {ok, PidC} = crdt_server:start_link(),
+    {ok, PidA} = crdt_server:start_link(a),
+    {ok, PidB} = crdt_server:start_link(b),
+    {ok, PidC} = crdt_server:start_link(c),
     crdt_server:connect(PidA, PidB),
     crdt_server:connect(PidB, PidC),
     [{pid_a, PidA} | [{pid_b, PidB} | [{pid_c, PidC} | Config]]].

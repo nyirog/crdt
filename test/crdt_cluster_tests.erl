@@ -20,9 +20,9 @@ crdt_cluster_test_() ->
 %%====================================================================
 
 start() ->
-    {ok, PidA} = crdt_server:start_link(),
-    {ok, PidB} = crdt_server:start_link(),
-    {ok, PidC} = crdt_server:start_link(),
+    {ok, PidA} = crdt_server:start_link(a),
+    {ok, PidB} = crdt_server:start_link(b),
+    {ok, PidC} = crdt_server:start_link(c),
     crdt_server:connect(PidA, PidB),
     crdt_server:connect(PidB, PidC),
     #{a => PidA, b => PidB, c => PidC}.
