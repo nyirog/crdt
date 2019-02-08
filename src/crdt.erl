@@ -19,7 +19,8 @@
 %% API
 %%====================================================================
 
-start(normal, []) -> crdt_sup:start_link(?SERVER).
+start(normal, []) ->
+    crdt_sup:start_link({?SERVER, erlang:node()}).
 
 stop(_State) -> crdt_sup:stop().
 
@@ -36,11 +37,7 @@ member(Key) -> crdt_server:member(?SERVER, Key).
 nodes() -> crdt_server:nodes(?SERVER).
 
 connect(Node) ->
-    case rpc:call(Node, erlang, whereis, [?SERVER]) of
-        Pid when erlang:is_pid(Pid) ->
-            crdt_server:connect(?SERVER, Pid);
-        _ -> undefined
-    end.
+    crdt_server:connect(?SERVER, {?SERVER, Node}).
 
 %%====================================================================
 %% Internal functions

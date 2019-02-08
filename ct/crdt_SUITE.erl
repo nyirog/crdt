@@ -9,34 +9,34 @@ all() -> [nodes_are_connected, {group, actions}].
 groups() ->
     [{actions, [shuffle, {repeat, 5}], [add_is_propagated, remove_is_propagated]}].
 
-init_per_testcase(_TestName, Config) ->
-    {ok, PidA} = crdt_server:start_link(a),
-    {ok, PidB} = crdt_server:start_link(b),
-    {ok, PidC} = crdt_server:start_link(c),
-    crdt_server:connect(PidA, PidB),
-    crdt_server:connect(PidB, PidC),
-    [{pid_a, PidA} | [{pid_b, PidB} | [{pid_c, PidC} | Config]]].
+init_per_testcase(_TestName, _Config) ->
+    {ok, _} = crdt_server:start_link(pid_a),
+    {ok, _} = crdt_server:start_link(pid_b),
+    {ok, _} = crdt_server:start_link(pid_c),
+    crdt_server:connect(pid_a, pid_b),
+    crdt_server:connect(pid_b, pid_c),
+    [].
 
-end_per_testcase(_TestName, Config) ->
-    crdt_server:stop(?config(pid_a, Config)),
-    crdt_server:stop(?config(pid_b, Config)),
-    crdt_server:stop(?config(pid_c, Config)).
+end_per_testcase(_TestName, _Config) ->
+    crdt_server:stop(pid_a),
+    crdt_server:stop(pid_b),
+    crdt_server:stop(pid_c).
 
-nodes_are_connected(Config) ->
-    Nodes = crdt_server:nodes(?config(pid_c, Config)),
-    true = lists:member(?config(pid_a, Config), Nodes),
-    true = lists:member(?config(pid_b, Config), Nodes).
+nodes_are_connected(_Config) ->
+    Nodes = crdt_server:nodes(pid_c),
+    true = lists:member(pid_a, Nodes),
+    true = lists:member(pid_b, Nodes).
 
-add_is_propagated(Config) ->
+add_is_propagated(_Config) ->
    Member = rand:uniform(),
-   crdt_server:add(?config(pid_b, Config), Member),
+   crdt_server:add(pid_b, Member),
    timer:sleep(100),
-   true = crdt_server:member(?config(pid_c, Config), Member).
+   true = crdt_server:member(pid_c, Member).
 
-remove_is_propagated(Config) ->
+remove_is_propagated(_Config) ->
    Member = rand:uniform(),
-   crdt_server:add(?config(pid_a, Config), Member),
+   crdt_server:add(pid_a, Member),
    timer:sleep(100),
-   crdt_server:remove(?config(pid_b, Config), Member),
+   crdt_server:remove(pid_b, Member),
    timer:sleep(100),
-   false = crdt_server:member(?config(pid_c, Config), Member).
+   false = crdt_server:member(pid_c, Member).

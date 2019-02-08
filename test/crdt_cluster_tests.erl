@@ -20,41 +20,41 @@ crdt_cluster_test_() ->
 %%====================================================================
 
 start() ->
-    {ok, PidA} = crdt_server:start_link(a),
-    {ok, PidB} = crdt_server:start_link(b),
-    {ok, PidC} = crdt_server:start_link(c),
-    crdt_server:connect(PidA, PidB),
-    crdt_server:connect(PidB, PidC),
-    #{a => PidA, b => PidB, c => PidC}.
+    {ok, _} = crdt_server:start_link(a),
+    {ok, _} = crdt_server:start_link(b),
+    {ok, _} = crdt_server:start_link(c),
+    crdt_server:connect(a, b),
+    crdt_server:connect(b, c),
+    undef.
 
-stop(Nodes) ->
-    lists:foreach(fun crdt_server:stop/1, maps:values(Nodes)).
+stop(_) ->
+    lists:foreach(fun crdt_server:stop/1, [a, b, c]).
 
 %%====================================================================
 %% Tests
 %%====================================================================
 
-connect_registers_all_the_cluster_nodes(#{a := PidA, b := PidB, c := PidC}) ->
-    [?_assertNot(lists:member(PidC, crdt_server:nodes(PidC))),
-     ?_assert(lists:member(PidA, crdt_server:nodes(PidC))),
-     ?_assert(lists:member(PidB, crdt_server:nodes(PidC)))].
+connect_registers_all_the_cluster_nodes(_) ->
+    [?_assertNot(lists:member(c, crdt_server:nodes(c))),
+     ?_assert(lists:member(a, crdt_server:nodes(c))),
+     ?_assert(lists:member(b, crdt_server:nodes(c)))].
 
-add_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
+add_is_propagated(_) ->
     timer:sleep(1),
-    crdt_server:add(PidB, 42),
+    crdt_server:add(b, 42),
     timer:sleep(1),
-    [?_assert(crdt_server:member(PidA, 42)),
-     ?_assert(crdt_server:member(PidC, 42))].
+    [?_assert(crdt_server:member(a, 42)),
+     ?_assert(crdt_server:member(c, 42))].
 
-remove_is_propagated(#{a := PidA, b := PidB, c := PidC}) ->
+remove_is_propagated(_) ->
     timer:sleep(1),
-    crdt_server:add(PidA, 42),
+    crdt_server:add(a, 42),
     timer:sleep(1),
-    crdt_server:add(PidA, 24),
+    crdt_server:add(a, 24),
     timer:sleep(1),
-    crdt_server:remove(PidA, 42),
+    crdt_server:remove(a, 42),
     timer:sleep(1),
-    [?_assertNot(crdt_server:member(PidB, 42)),
-     ?_assert(crdt_server:member(PidB, 24)),
-     ?_assertNot(crdt_server:member(PidC, 42)),
-     ?_assert(crdt_server:member(PidC, 24))].
+    [?_assertNot(crdt_server:member(b, 42)),
+     ?_assert(crdt_server:member(b, 24)),
+     ?_assertNot(crdt_server:member(c, 42)),
+     ?_assert(crdt_server:member(c, 24))].

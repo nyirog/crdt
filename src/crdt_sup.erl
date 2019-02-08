@@ -17,9 +17,9 @@
 %% API functions
 %%====================================================================
 
-start_link(ServerName) ->
+start_link(ServerRef) ->
     supervisor:start_link({local, crdt}, ?MODULE,
-                          ServerName).
+                          ServerRef).
 
 stop() ->
     case whereis(crdt) of
@@ -35,10 +35,10 @@ stop() ->
 %% Optional keys are restart, shutdown, type, modules.
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
-init(ServerName) ->
+init(ServerRef) ->
     {ok,
      {{one_for_all, 0, 1},
-      [{server, {crdt_server, start_link, [ServerName]},
+      [{server, {crdt_server, start_link, [ServerRef]},
         permanent, 5000, worker, [crdt_server]}]}}.
 
 %%====================================================================
