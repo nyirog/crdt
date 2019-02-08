@@ -176,7 +176,7 @@ handle_event(Event = #event{action = remove,
              State = #state{history = History}) ->
     CleanedHistory = [E
                       || E <- History,
-                         not lists:member(E#event.clock, Removables)],
+                         not lists:member({E#event.node, E#event.clock}, Removables)],
     State#state{history = add_event(Event, CleanedHistory),
                 clock = Clock}.
 
@@ -192,5 +192,5 @@ add_node(Node, Self, Nodes) ->
     end.
 
 filter_event_itcs(Value, #state{history = History}) ->
-    [E#event.clock
+    [{E#event.node, E#event.clock}
      || E <- History, E#event.value =:= Value].
