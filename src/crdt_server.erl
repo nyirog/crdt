@@ -46,6 +46,7 @@ handle_call(nodes, _From, State = #{nodes := Nodes}) ->
     {reply, Nodes, State};
 handle_call({join, NewNode}, From,
             State = #{clock := Clock, node := Self}) ->
+    et:trace_me(90, NewNode, Self, join, []),
     [LeftClock, RightClock] = itc:fork(Clock),
     gen_server:reply(From, RightClock),
     NewEvent = #event{clock = itc:event(LeftClock),
@@ -59,38 +60,44 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) -> {noreply, State}.
 
 handle_cast({add, Value},
-            State = #{clock := Clock, node := Node}) ->
+            State = #{clock := Clock, node := Self}) ->
+    et:trace_me(90, Self, add, Value),
     Event = #event{clock = itc:event(Clock), action = add,
-                   node = Node, value = Value},
+                   node = Self, value = Value},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({remove, Value},
-            State = #{clock := Clock, node := Node}) ->
+            State = #{clock := Clock, node := Self}) ->
+    et:trace_me(90, Self, remove, Value),
     Event = #event{clock = itc:event(Clock),
-                   action = remove, node = Node,
+                   action = remove, node = Self,
                    value = filter_event_itcs(Value, State)},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({update, Event},
-            State = #{clock := Clock}) ->
+            State = #{clock := Clock, node := Self}) ->
+    et:trace_me(80, Self, update, Event),
     NewState = handle_event(Event, State),
     NewClock = itc:event(itc:join(maps:get(clock, NewState),
                                   Clock)),
     {noreply, NewState#{clock := NewClock}};
 handle_cast({sync, Clock, Node},
             State = #{node := Self}) ->
+    et:trace_me(80, Node, Self, sync, Clock),
     UnseenEvents = list_unseen_events(Clock, State),
     update_events(Node, UnseenEvents),
     #event{clock = LastSeenClock} =
         get_last_seen_event(UnseenEvents, State),
     gen_server:cast(Node, {sync_from, LastSeenClock, Self}),
     {noreply, State};
-handle_cast({sync_from, Clock, Node}, State) ->
+handle_cast({sync_from, Clock, Node}, State = #{node := Self}) ->
+    et:trace_me(80, Node, Self, sync_from, Clock),
     update_events(Node, list_unseen_events(Clock, State)),
     {noreply, State};
 handle_cast({connect, Node},
             State = #{nodes := Nodes, history := History,
                       node := Self}) ->
+    et:trace_me(90, Self, Node, connect, []),
     update_events(Node, History),
     {noreply,
      State#{clock := gen_server:call(Node, {join, Self}),
