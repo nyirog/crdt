@@ -51,7 +51,6 @@ handle_call({join, NewNode}, From,
     NewEvent = #event{clock = itc:event(LeftClock),
                       node = Self, action = join, value = [NewNode, Self]},
     NewState = handle_event(NewEvent, State),
-    update_events(NewNode, maps:get(history, NewState)),
     sync_event(NewEvent, NewState),
     {noreply, NewState};
 handle_call(stop, _From, State) ->
@@ -78,8 +77,12 @@ handle_cast({update, Event},
                                   Clock)),
     {noreply, NewState#{clock := NewClock}};
 handle_cast({sync, Clock, Node},
-            State = #{node := Self}) ->
-    UnseenEvents = list_unseen_events(Clock, State),
+            State = #{node := Self, nodes := Nodes,
+                      history := History}) ->
+    UnseenEvents = case lists:member(Node, Nodes) of
+                       true -> list_unseen_events(Clock, State);
+                       false -> History
+                   end,
     update_events(Node, UnseenEvents),
     #event{clock = LastSeenClock} =
         get_last_seen_event(UnseenEvents, State),
