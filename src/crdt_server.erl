@@ -67,7 +67,7 @@ handle_cast({remove, Value},
             State = #{clock := Clock, node := Node}) ->
     Event = #event{clock = itc:event(Clock),
                    action = remove, node = Node,
-                   value = filter_event_itcs(Value, State)},
+                   value = filter_event_by_value(Value, State)},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({update, Event},
@@ -80,16 +80,17 @@ handle_cast({sync, Clock, Node},
             State = #{node := Self, nodes := Nodes,
                       history := History}) ->
     UnseenEvents = case lists:member(Node, Nodes) of
-                       true -> list_unseen_events(Clock, State);
+                       true -> list_unseen_events(Clock, History);
                        false -> History
                    end,
     update_events(Node, UnseenEvents),
     #event{clock = LastSeenClock} =
-        get_last_seen_event(UnseenEvents, State),
+        get_last_seen_event(Clock, History),
     gen_server:cast(Node, {sync_from, LastSeenClock, Self}),
     {noreply, State};
-handle_cast({sync_from, Clock, Node}, State) ->
-    update_events(Node, list_unseen_events(Clock, State)),
+handle_cast({sync_from, Clock, Node},
+            State = #{history := History}) ->
+    update_events(Node, list_unseen_events(Clock, History)),
     {noreply, State};
 handle_cast({connect, Node},
             State = #{nodes := Nodes, history := History,
@@ -146,15 +147,21 @@ update_events(Node, History) ->
              end,
     lists:foreach(Update, History).
 
-list_unseen_events(Clock, #{history := History}) ->
-    Cmp = fun (E) -> not itc:leq(E#event.clock, Clock) end,
-    lists:takewhile(Cmp, History).
+list_unseen_events(Clock, History) ->
+    Filter = fun (E) -> not itc:leq(E#event.clock, Clock)
+             end,
+    lists:filter(Filter, History).
 
-get_last_seen_event(UnseenEvents,
-                    #{history := History}) ->
-    Last = erlang:min(erlang:length(UnseenEvents) + 1,
-                      erlang:length(History)),
-    lists:nth(Last, History).
+get_last_seen_event(Clock, History) ->
+    Filter = fun (E) -> itc:leq(E#event.clock, Clock) end,
+    Cmp = fun (E, F) ->
+                  itc:leq(E#event.clock, F#event.clock)
+          end,
+    case lists:filter(Filter, History) of
+        [] -> lists:last(History);
+        [Last] -> Last;
+        Events -> lists:last(lists:sort(Cmp, Events))
+    end.
 
 handle_event(#event{action = init}, State) -> State;
 handle_event(Event = #event{action = join,
@@ -193,6 +200,6 @@ add_node(Node, Self, Nodes) ->
        true -> lists:usort([Node | Nodes])
     end.
 
-filter_event_itcs(Value, #{history := History}) ->
+filter_event_by_value(Value, #{history := History}) ->
     [{E#event.node, E#event.clock}
      || E <- History, E#event.value =:= Value].
