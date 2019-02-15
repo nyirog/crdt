@@ -35,10 +35,10 @@ message_to_label({update, Event}) ->
     Label = io_lib:format("update: ~p",
                           [erlang:element(2, Event)]),
     lists:flatten(Label);
-message_to_label({sync, {_Id, Event}, Node}) ->
+message_to_label({sync, Node, {_Id, Event}}) ->
     Label = io_lib:format("sync ~p @ ~p", [Event, Node]),
     lists:flatten(Label);
-message_to_label({sync_from, {_Id, Event}, Node}) ->
+message_to_label({sync_from, Node, {_Id, Event}}) ->
     Label = io_lib:format("sync from ~p @ ~p",
                           [Event, Node]),
     lists:flatten(Label);
