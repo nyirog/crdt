@@ -37,10 +37,12 @@ terminate(_Reason, _State) -> ok.
 
 %%--------------------------------------------------------------------
 
-handle_call(members, _From, State) ->
-    {reply, lists:usort(list_members(State)), State};
-handle_call({member, Value}, _From, State) ->
-    {reply, lists:member(Value, list_members(State)),
+handle_call(members, _From,
+            State = #{history := History}) ->
+    {reply, lists:usort(list_members(History)), State};
+handle_call({member, Value}, _From,
+            State = #{history := History}) ->
+    {reply, lists:member(Value, list_members(History)),
      State};
 handle_call(nodes, _From, State = #{nodes := Nodes}) ->
     {reply, Nodes, State};
@@ -64,10 +66,11 @@ handle_cast({add, Value},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({remove, Value},
-            State = #{clock := Clock, node := Node}) ->
+            State = #{clock := Clock, node := Node,
+                      history := History}) ->
     Event = #event{clock = itc:event(Clock),
                    action = remove, node = Node,
-                   value = filter_event_by_value(Value, State)},
+                   value = filter_event_by_value(Value, History)},
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
 handle_cast({update, Event},
@@ -76,16 +79,16 @@ handle_cast({update, Event},
     NewClock = itc:event(itc:join(maps:get(clock, NewState),
                                   Clock)),
     {noreply, NewState#{clock := NewClock}};
-handle_cast({sync, Clock, Node},
+handle_cast({sync, Node, Clock},
             State = #{node := Self, nodes := Nodes,
                       history := History}) ->
     UnseenEvents = case lists:member(Node, Nodes) of
                        true -> list_unseen_events(Clock, History);
-                       false -> History
+                       false -> maps:values(History)
                    end,
     update_events(Node, UnseenEvents),
-    #event{clock = LastSeenClock} =
-        get_last_seen_event(Clock, History),
+    LastSeenClock = get_last_seen_event_clock(Clock,
+                                              History),
     gen_server:cast(Node, {sync_from, Self, LastSeenClock}),
     {noreply, State};
 handle_cast({sync_from, Node, Clock},
@@ -95,7 +98,7 @@ handle_cast({sync_from, Node, Clock},
 handle_cast({connect, Node},
             State = #{nodes := Nodes, history := History,
                       node := Self}) ->
-    update_events(Node, History),
+    update_events(Node, maps:values(History)),
     {noreply,
      State#{clock := gen_server:call(Node, {join, Self}),
             nodes := add_node(Node, Self, Nodes)}};
@@ -128,13 +131,13 @@ init_state(ServerRef) ->
     Clock = itc:seed(),
     Event = #event{action = init, clock = Clock,
                    value = none, node = ServerRef},
-    #{history => [Event], nodes => [], clock => Clock,
-      node => ServerRef}.
+    #{history => #{{ServerRef, Clock} => Event},
+      nodes => [], clock => Clock, node => ServerRef}.
 
 sync_event(#event{clock = Clock},
            #{nodes := Nodes, node := Self}) ->
     Sync = fun (Pid) ->
-                   gen_server:cast(Pid, {sync, Clock, Self})
+                   gen_server:cast(Pid, {sync, Self, Clock})
            end,
     lists:foreach(Sync, Nodes).
 
@@ -156,11 +159,9 @@ handle_event(Event = #event{action = add,
 handle_event(Event = #event{action = remove,
                             value = Removables, clock = Clock},
              State = #{history := History}) ->
-    CleanedHistory = [E
-                      || E <- History,
-                         not
-                             lists:member({E#event.node, E#event.clock},
-                                          Removables)],
+    Clean = fun (K, _) -> not lists:member(K, Removables)
+            end,
+    CleanedHistory = maps:filter(Clean, History),
     State#{history := add_event(Event, CleanedHistory),
            clock := Clock}.
 
@@ -169,37 +170,42 @@ add_node(Node, Self, Nodes) ->
        true -> lists:usort([Node | Nodes])
     end.
 
-add_event(Event, History) ->
-    Cmp = fun (E, F) ->
-                  itc:leq(F#event.clock, E#event.clock)
-          end,
-    lists:usort(Cmp, [Event | History]).
-
-list_members(#{history := History}) ->
-    [E#event.value || E <- History, E#event.action =:= add].
-
-update_events(Node, History) ->
+update_events(Node, Events) ->
     Update = fun (Event) ->
                      gen_server:cast(Node, {update, Event})
              end,
-    lists:foreach(Update, History).
+    lists:foreach(Update, Events).
+
+add_event(Event, History) ->
+    History#{get_event_key(Event) => Event}.
+
+list_members(History) ->
+    [E#event.value
+     || E <- maps:values(History), E#event.action =:= add].
 
 list_unseen_events(Clock, History) ->
-    Filter = fun (E) -> not itc:leq(E#event.clock, Clock)
+    Filter = fun ({_, EventClock}, _) ->
+                     not itc:leq(EventClock, Clock)
              end,
-    lists:filter(Filter, History).
+    maps:values(maps:filter(Filter, History)).
 
-get_last_seen_event(Clock, History) ->
-    Filter = fun (E) -> itc:leq(E#event.clock, Clock) end,
-    Cmp = fun (E, F) ->
-                  itc:leq(E#event.clock, F#event.clock)
-          end,
-    case lists:filter(Filter, History) of
+get_last_seen_event_clock(Clock, History) ->
+    Clocks = [EventClock
+              || {_, EventClock} <- maps:keys(History)],
+    Filter = fun (EventClock) -> itc:leq(EventClock, Clock)
+             end,
+    Cmp = fun (C, D) -> itc:leq(D, C) end,
+    case lists:filter(Filter, Clocks) of
         [] -> lists:last(History);
         [Last] -> Last;
-        Events -> lists:last(lists:sort(Cmp, Events))
+        FilteredClocks ->
+            erlang:hd(lists:sort(Cmp, FilteredClocks))
     end.
 
-filter_event_by_value(Value, #{history := History}) ->
-    [{E#event.node, E#event.clock}
-     || E <- History, E#event.value =:= Value].
+filter_event_by_value(Value, History) ->
+    [K
+     || {K, E} <- maps:to_list(History),
+        E#event.value =:= Value].
+
+get_event_key(#event{node = Node, clock = Clock}) ->
+    {Node, Clock}.
