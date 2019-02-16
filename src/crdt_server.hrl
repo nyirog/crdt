@@ -1,0 +1,2 @@
+-record(event_key, {node, clock}).
+-record(event, {key, action, value}).
