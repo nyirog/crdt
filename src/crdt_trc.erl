@@ -36,10 +36,12 @@ trace({trace, Pid, call,
 message_to_label({update, #event{action = Action}}) ->
     Label = io_lib:format("update: ~p", [Action]),
     lists:flatten(Label);
-message_to_label({sync, #event_key{node = Node, clock = {_Id, Event}}}) ->
+message_to_label({sync,
+                  #event_key{node = Node, clock = {_Id, Event}}}) ->
     Label = io_lib:format("sync ~p @ ~p", [Event, Node]),
     lists:flatten(Label);
-message_to_label({sync_from, #event_key{node = Node, clock = {_Id, Event}}}) ->
+message_to_label({sync_from,
+                  #event_key{node = Node, clock = {_Id, Event}}}) ->
     Label = io_lib:format("sync from ~p @ ~p",
                           [Event, Node]),
     lists:flatten(Label);

@@ -31,7 +31,11 @@ prop_crdt_server_acts_like_a_set() ->
                 end)
             ).
 
-initial_state() -> ordsets:new().
+initial_state() ->
+    mnesia:delete_table(?SERVER),
+    crdt:init([], [?SERVER]),
+    mnesia:wait_for_tables([?SERVER], 1000),
+    ordsets:new().
 
 command(_State) ->
     oneof([{call, ?SERVER, add, [?SERVER, member()]},

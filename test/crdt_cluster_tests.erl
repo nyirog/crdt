@@ -20,6 +20,8 @@ crdt_cluster_test_() ->
 %%====================================================================
 
 start() ->
+    crdt:init([], [a, b, c]),
+    mnesia:wait_for_tables([a, b, c], 1000),
     {ok, _} = crdt_server:start_link(a),
     {ok, _} = crdt_server:start_link(b),
     {ok, _} = crdt_server:start_link(c),
@@ -28,32 +30,34 @@ start() ->
     undef.
 
 stop(_) ->
-    lists:foreach(fun crdt_server:stop/1, [a, b, c]).
+    lists:foreach(fun crdt_server:stop/1, [a, b, c]),
+    lists:foreach(fun mnesia:delete_table/1, [a, b, c]).
 
 %%====================================================================
 %% Tests
 %%====================================================================
 
 connect_registers_all_the_cluster_nodes(_) ->
+    timer:sleep(5),
     [?_assertNot(lists:member(c, crdt_server:nodes(c))),
      ?_assert(lists:member(a, crdt_server:nodes(c))),
      ?_assert(lists:member(b, crdt_server:nodes(c)))].
 
 add_is_propagated(_) ->
-    timer:sleep(1),
+    timer:sleep(5),
     crdt_server:add(b, 42),
-    timer:sleep(1),
+    timer:sleep(5),
     [?_assert(crdt_server:member(a, 42)),
      ?_assert(crdt_server:member(c, 42))].
 
 remove_is_propagated(_) ->
-    timer:sleep(1),
+    timer:sleep(5),
     crdt_server:add(a, 42),
-    timer:sleep(1),
+    timer:sleep(5),
     crdt_server:add(a, 24),
-    timer:sleep(1),
+    timer:sleep(5),
     crdt_server:remove(a, 42),
-    timer:sleep(1),
+    timer:sleep(5),
     [?_assertNot(crdt_server:member(b, 42)),
      ?_assert(crdt_server:member(b, 24)),
      ?_assertNot(crdt_server:member(c, 42)),

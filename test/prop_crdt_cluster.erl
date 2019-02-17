@@ -57,7 +57,11 @@ prop_crdt_server_cluster() ->
             ).
 
 
-initial_state() -> #state{nodes = ordsets:new(), members = ordsets:new()}.
+initial_state() ->
+    lists:foreach(fun mnesia:delete_table/1, [node_a, node_b, node_c]),
+    crdt:init([], [node_a, node_b, node_c]),
+    mnesia:wait_for_tables([node_a, node_b, node_c], 1000),
+    #state{nodes = ordsets:new(), members = ordsets:new()}.
 
 command(_S) ->
     oneof([{call, ?SERVER, add, [any_node(), member()]},
@@ -69,15 +73,15 @@ precondition(S, {call, _, add, [Node, _]}) -> ordsets:is_element(Node, S#state.n
 precondition(S, {call, _, remove, [Node, _]}) -> ordsets:is_element(Node, S#state.nodes).
 
 next_state(S, _Result, {call, _, connect, Nodes}) ->
-    timer:sleep(1),
+    timer:sleep(3),
     S#state{nodes = ordsets:union(Nodes, S#state.nodes)};
 
 next_state(S, _Result, {call, _, add, [_Node, Member]}) ->
-    timer:sleep(1),
+    timer:sleep(3),
     S#state{members = ordsets:add_element(Member, S#state.members)};
 
 next_state(S, _Result, {call, _, remove, [_Node, Member]}) ->
-    timer:sleep(1),
+    timer:sleep(3),
     S#state{members = ordsets:del_element(Member, S#state.members)}.
 
 postcondition(_State, _Command, _Result) -> true.

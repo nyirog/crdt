@@ -1,7 +1,9 @@
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
 %% @doc crdt server
 %% @end
-%%%-------------------------------------------------------------------
+%%%-----------------------------------------------------------------------------
+
+-include_lib("stdlib/include/qlc.hrl").
 
 -module(crdt_server).
 
@@ -11,47 +13,42 @@
 
 %% Application callbacks
 -export([add/2, connect/2, member/2, members/1, nodes/1,
-         remove/2, start_link/1, stop/0, stop/1]).
+         remove/2, start_link/1, stop/1]).
 
 -export([handle_call/3, handle_cast/2, handle_info/2,
          init/1, terminate/2]).
 
-%%====================================================================
+%%==============================================================================
 %% API
-%%====================================================================
+%%==============================================================================
 
 start_link(ServerRef = {Name, _Node}) ->
-    gen_server:start_link({local, Name}, ?MODULE,
-                          init_state(ServerRef), []);
+    gen_server:start_link({local, Name}, ?MODULE, init_state(ServerRef), []);
 start_link(Name) ->
-    gen_server:start_link({local, Name}, ?MODULE,
-                          init_state(Name), []).
+    gen_server:start_link({local, Name}, ?MODULE, init_state(Name), []).
 
 stop(Pid) -> gen_server:call(Pid, stop).
-
-stop() -> gen_server:call(?MODULE, stop).
 
 init(State) -> {ok, State}.
 
 terminate(_Reason, _State) -> ok.
 
-%%--------------------------------------------------------------------
+%%------------------------------------------------------------------------------
 
-handle_call(members, _From,
-            State = #{history := History}) ->
-    {reply, lists:usort(list_members(History)), State};
-handle_call({member, Value}, _From,
-            State = #{history := History}) ->
-    {reply, lists:member(Value, list_members(History)),
-     State};
+handle_call(members, _From, State = #{node := Self}) ->
+    {reply, lists:usort(list_members(get_name(Self))), State};
+handle_call({member, Value}, _From, State = #{node := Self}) ->
+    {reply, lists:member(Value, list_members(get_name(Self))), State};
 handle_call(nodes, _From, State = #{nodes := Nodes}) ->
     {reply, Nodes, State};
-handle_call({join, NewNode}, From,
-            State = #{clock := Clock, node := Self}) ->
+handle_call({join, NewNode}, From, State = #{clock := Clock, node := Self}) ->
     [LeftClock, RightClock] = itc:fork(Clock),
     gen_server:reply(From, RightClock),
-    NewEvent = #event{key = #event_key{clock = itc:event(LeftClock), node = Self},
-                      action = join, value = [NewNode, Self]},
+    NewEvent = #event{
+        key = #event_key{clock = itc:event(LeftClock), node = Self},
+        action = join,
+        value = [NewNode, Self]
+    },
     NewState = handle_event(NewEvent, State),
     sync_event(NewEvent, NewState),
     {noreply, NewState};
@@ -59,54 +56,65 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) -> {noreply, State}.
 
-handle_cast({add, Value},
-            State = #{clock := Clock, node := Node}) ->
-    Event = #event{key = #event_key{clock = itc:event(Clock), node = Node},
-                   action = add, value = Value},
+handle_cast({add, Value}, State = #{clock := Clock, node := Node}) ->
+    Event = #event{
+        key = #event_key{clock = itc:event(Clock), node = Node},
+        action = add,
+        value = Value
+    },
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
-handle_cast({remove, Value},
-            State = #{clock := Clock, node := Node,
-                      history := History}) ->
-    Event = #event{key = #event_key{clock = itc:event(Clock), node = Node},
-                   action = remove,
-                   value = filter_event_by_value(Value, History)},
+handle_cast({remove, Value}, State = #{clock := Clock, node := Self}) ->
+    Event = #event{
+        key = #event_key{clock = itc:event(Clock), node = Self},
+        action = remove,
+        value = filter_event_by_value(get_name(Self), Value)
+    },
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
-handle_cast({update, Event},
-            State = #{clock := Clock}) ->
+handle_cast({update, Event}, State = #{clock := Clock}) ->
     NewState = handle_event(Event, State),
-    NewClock = itc:event(itc:join(maps:get(clock, NewState),
-                                  Clock)),
+    NewClock = itc:event(itc:join(maps:get(clock, NewState), Clock)),
     {noreply, NewState#{clock := NewClock}};
-handle_cast({sync, #event_key{node = Node, clock = Clock}},
-            State = #{node := Self, nodes := Nodes,
-                      history := History}) ->
+handle_cast(
+        {sync, #event_key{node = Node, clock = Clock}},
+        State = #{node := Self, nodes := Nodes}
+) ->
+    TableName = get_name(Self),
+    Events = fun () -> qlc:e(qlc:q([E || E <- mnesia:table(TableName)])) end,
     UnseenEvents = case lists:member(Node, Nodes) of
-                       true -> list_unseen_events(Clock, History);
-                       false -> maps:values(History)
-                   end,
+        true -> list_unseen_events(TableName, Clock);
+        false -> mnesia:async_dirty(Events)
+    end,
     update_events(Node, UnseenEvents),
-    LastSeenClock = get_last_seen_event_clock(Clock,
-                                              History),
-    gen_server:cast(Node, {sync_from, #event_key{node = Self, clock = LastSeenClock}}),
+    LastSeenClock = get_last_seen_event_clock(get_name(Self), Clock),
+    gen_server:cast(
+        Node,
+        {sync_from, #event_key{node = Self, clock = LastSeenClock}}
+    ),
     {noreply, State};
-handle_cast({sync_from, #event_key{node = Node, clock = Clock}},
-            State = #{history := History}) ->
-    update_events(Node, list_unseen_events(Clock, History)),
+handle_cast(
+        {sync_from, #event_key{node = Node, clock = Clock}},
+        State = #{node := Self}
+) ->
+    update_events(Node, list_unseen_events(get_name(Self), Clock)),
     {noreply, State};
-handle_cast({connect, Node},
-            State = #{nodes := Nodes, history := History,
-                      node := Self}) ->
-    update_events(Node, maps:values(History)),
-    {noreply,
-     State#{clock := gen_server:call(Node, {join, Self}),
-            nodes := add_node(Node, Self, Nodes)}};
+handle_cast({connect, Node}, State = #{nodes := Nodes, node := Self}) ->
+    TableName = get_name(Self),
+    Events = fun () -> qlc:e(qlc:q([E || E <- mnesia:table(TableName)])) end,
+    update_events(Node, mnesia:async_dirty(Events)),
+    {
+        noreply,
+        State#{
+            clock := gen_server:call(Node, {join, Self}),
+            nodes := add_node(Node, Self, Nodes)
+        }
+    };
 handle_cast(_Event, State) -> {noreply, State}.
 
 handle_info(_Info, State) -> {noreply, State}.
 
-%%--------------------------------------------------------------------
+%%------------------------------------------------------------------------------
 
 add(Pid, Value) -> gen_server:cast(Pid, {add, Value}).
 
@@ -123,47 +131,63 @@ member(Pid, Value) ->
 
 nodes(Pid) -> gen_server:call(Pid, nodes).
 
-%%====================================================================
+%%==============================================================================
 %% Internal functions
-%%====================================================================
+%%==============================================================================
 
 init_state(ServerRef) ->
     Clock = itc:seed(),
     EventKey = #event_key{clock = Clock, node = ServerRef},
-    Event = #event{action = init, key = EventKey,
-                   value = none},
-    #{history => #{EventKey => Event},
-      nodes => [], clock => Clock, node => ServerRef}.
+    Event = #event{action = init, key = EventKey, value = none},
+    add_event(get_name(ServerRef), Event),
+    #{nodes => [], clock => Clock, node => ServerRef}.
 
-sync_event(#event{key = Key},
-           #{nodes := Nodes, node := Self}) ->
+sync_event(#event{key = Key}, #{nodes := Nodes, node := Self}) ->
     Sync = fun (Pid) ->
-                   gen_server:cast(Pid, {sync, Key#event_key{node = Self}})
-           end,
+        gen_server:cast(Pid, {sync, Key#event_key{node = Self}})
+    end,
     lists:foreach(Sync, Nodes).
 
 handle_event(#event{action = init}, State) -> State;
-handle_event(Event = #event{action = join, key = #event_key{clock = Clock},
-                            value = [LeftNode, RightNode]},
-             State = #{history := History, nodes := Nodes,
-                       node := Self}) ->
-    State#{history := add_event(Event, History),
-           clock := Clock,
-           nodes :=
-               add_node(RightNode, Self,
-                        add_node(LeftNode, Self, Nodes))};
-handle_event(Event = #event{action = add, key = #event_key{clock = Clock}},
-             State = #{history := History}) ->
-    State#{history := add_event(Event, History),
-           clock := Clock};
-handle_event(Event = #event{action = remove,
-                            value = Removables, key = #event_key{clock = Clock}},
-             State = #{history := History}) ->
-    Clean = fun (K, _) -> not lists:member(K, Removables)
-            end,
-    CleanedHistory = maps:filter(Clean, History),
-    State#{history := add_event(Event, CleanedHistory),
-           clock := Clock}.
+handle_event(
+        Event = #event{
+            action = join,
+            key = #event_key{clock = Clock},
+            value = [LeftNode, RightNode]
+        },
+        State = #{nodes := Nodes, node := Self}
+) ->
+    add_event(get_name(Self), Event),
+    State#{clock := Clock,
+           nodes := add_node(
+               RightNode,
+               Self,
+               add_node(LeftNode, Self, Nodes)
+           )
+    };
+handle_event(
+        Event = #event{action = add, key = #event_key{clock = Clock}},
+        State = #{node := Self}
+) ->
+    add_event(get_name(Self), Event),
+    State#{clock := Clock};
+handle_event(
+        Event = #event{
+            action = remove,
+            value = Removables,
+            key = #event_key{clock = Clock}
+        },
+        State = #{node := Self}
+) ->
+    TableName = get_name(Self),
+    Remove = fun () ->
+        lists:foreach(
+            fun (K) -> mnesia:dirty_delete(TableName, K) end,
+            Removables),
+        mnesia:dirty_write(TableName, Event)
+    end,
+    mnesia:async_dirty(Remove),
+    State#{clock := Clock}.
 
 add_node(Node, Self, Nodes) ->
     if Node =:= Self -> Nodes;
@@ -171,37 +195,60 @@ add_node(Node, Self, Nodes) ->
     end.
 
 update_events(Node, Events) ->
-    Update = fun (Event) ->
-                     gen_server:cast(Node, {update, Event})
-             end,
+    Update = fun (Event) -> gen_server:cast(Node, {update, Event}) end,
     lists:foreach(Update, Events).
 
-add_event(Event, History) ->
-    History#{Event#event.key => Event}.
+add_event(TableName, Event) ->
+    mnesia:dirty_write(TableName, Event).
 
-list_members(History) ->
-    [E#event.value
-     || E <- maps:values(History), E#event.action =:= add].
+list_members(TableName) ->
+    Members = fun () ->
+        Q = qlc:q([
+            E#event.value
+            || E <- mnesia:table(TableName),
+            E#event.action =:= add
+        ]),
+        qlc:e(Q)
+    end,
+    mnesia:async_dirty(Members).
 
-list_unseen_events(Clock, History) ->
-    Filter = fun (K, _) ->
-                     not itc:leq(K#event_key.clock, Clock)
-             end,
-    maps:values(maps:filter(Filter, History)).
+list_unseen_events(TableName, Clock) ->
+    Events = fun () ->
+        Q = qlc:q([
+            E
+            || E <- mnesia:table(TableName),
+            not itc:leq((E#event.key)#event_key.clock, Clock)
+        ]),
+        qlc:e(Q)
+    end,
+    mnesia:async_dirty(Events).
 
-get_last_seen_event_clock(Clock, History) ->
-    Clocks = [K#event_key.clock
-              || K <- maps:keys(History)],
-    Filter = fun (EventClock) -> itc:leq(EventClock, Clock)
-             end,
+get_last_seen_event_clock(TableName, Clock) ->
+    Clocks = fun () ->
+        Q = qlc:q([
+            C
+            || #event{key = #event_key{clock = C}} <- mnesia:table(TableName),
+            itc:leq(C, Clock)
+        ]),
+        qlc:e(Q)
+    end,
     Cmp = fun (C, D) -> itc:leq(D, C) end,
-    case lists:filter(Filter, Clocks) of
+    case mnesia:async_dirty(Clocks) of
+        [] -> itc:seed();
         [Last] -> Last;
-        FilteredClocks ->
-            erlang:hd(lists:sort(Cmp, FilteredClocks))
+        FilteredClocks -> erlang:hd(lists:sort(Cmp, FilteredClocks))
     end.
 
-filter_event_by_value(Value, History) ->
-    [K
-     || {K, E} <- maps:to_list(History),
-        E#event.value =:= Value].
+filter_event_by_value(TableName, Value) ->
+    Keys = fun () ->
+        Q = qlc:q([
+            K
+            || #event{key = K, value = EventValue} <- mnesia:table(TableName),
+            EventValue =:= Value
+        ]),
+        qlc:e(Q)
+    end,
+    mnesia:async_dirty(Keys).
+
+get_name({Name, _Node}) -> Name;
+get_name(Name) -> Name.

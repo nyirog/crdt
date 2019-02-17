@@ -22,10 +22,13 @@ crdt_test_() ->
 %%====================================================================
 
 start() ->
+    crdt:init([], [crdt_server]),
+    mnesia:wait_for_tables([crdt_server], 1000),
     {ok, _} = crdt_server:start_link(crdt_server).
 
 stop(_) ->
-    crdt_server:stop(crdt_server).
+    crdt_server:stop(crdt_server),
+    mnesia:delete_table(crdt_server).
 
 %%====================================================================
 %% Tests
