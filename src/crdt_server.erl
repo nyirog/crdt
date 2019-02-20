@@ -36,9 +36,9 @@ terminate(_Reason, _State) -> ok.
 %%------------------------------------------------------------------------------
 
 handle_call(members, _From, State = #{node := Self}) ->
-    {reply, lists:usort(list_members(get_name(Self))), State};
+    {reply, lists:usort(list_values(get_name(Self))), State};
 handle_call({member, Value}, _From, State = #{node := Self}) ->
-    {reply, lists:member(Value, list_members(get_name(Self))), State};
+    {reply, has_value(get_name(Self), Value), State};
 handle_call(nodes, _From, State = #{nodes := Nodes}) ->
     {reply, Nodes, State};
 handle_call({join, NewNode}, From, State = #{clock := Clock, node := Self}) ->
@@ -201,7 +201,7 @@ update_events(Node, Events) ->
 add_event(TableName, Event) ->
     mnesia:dirty_write(TableName, Event).
 
-list_members(TableName) ->
+list_values(TableName) ->
     Members = fun () ->
         Q = qlc:q([
             E#event.value
@@ -211,6 +211,13 @@ list_members(TableName) ->
         qlc:e(Q)
     end,
     mnesia:async_dirty(Members).
+
+has_value(TableName, Value) ->
+    Members = fun () ->
+        Q = qlc:q([E || E <- mnesia:table(TableName), E#event.value =:= Value]),
+        qlc:e(Q)
+    end,
+    erlang:length(mnesia:async_dirty(Members)) > 0.
 
 list_unseen_events(TableName, Clock) ->
     Events = fun () ->
