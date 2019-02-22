@@ -35,11 +35,24 @@ stop() ->
 %% Optional keys are restart, shutdown, type, modules.
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
-init(ServerRef) ->
-    {ok,
-     {{one_for_all, 0, 1},
-      [{server, {crdt_server, start_link, [ServerRef]},
-        permanent, 5000, worker, [crdt_server]}]}}.
+init(ServerRef) -> {
+    ok,
+    {
+        #{
+            strategy => one_for_all,
+            intensity => 1,
+            period => 5
+        },
+        [#{
+            id => server,
+            start => {crdt_server, start_link, [ServerRef]},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [crdt_server]
+        }]
+    }
+}.
 
 %%====================================================================
 %% Internal functions
