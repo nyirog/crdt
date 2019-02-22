@@ -33,7 +33,7 @@ prop_crdt_server_acts_like_a_set() ->
 
 initial_state() ->
     mnesia:delete_table(?SERVER),
-    crdt:init([], [?SERVER]),
+    crdt:install([], [?SERVER]),
     mnesia:wait_for_tables([?SERVER], 1000),
     ordsets:new().
 

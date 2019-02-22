@@ -59,7 +59,7 @@ prop_crdt_server_cluster() ->
 
 initial_state() ->
     lists:foreach(fun mnesia:delete_table/1, [node_a, node_b, node_c]),
-    crdt:init([], [node_a, node_b, node_c]),
+    crdt:install([], [node_a, node_b, node_c]),
     mnesia:wait_for_tables([node_a, node_b, node_c], 1000),
     #state{nodes = ordsets:new(), members = ordsets:new()}.
 

@@ -20,7 +20,7 @@ crdt_cluster_test_() ->
 %%====================================================================
 
 start() ->
-    crdt:init([], [a, b, c]),
+    crdt:install([], [a, b, c]),
     mnesia:wait_for_tables([a, b, c], 1000),
     {ok, _} = crdt_server:start_link(a),
     {ok, _} = crdt_server:start_link(b),

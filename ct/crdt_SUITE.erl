@@ -10,7 +10,7 @@ groups() ->
     [{actions, [shuffle, {repeat, 5}], [add_is_propagated, remove_is_propagated]}].
 
 init_per_testcase(_TestName, _Config) ->
-    crdt:init([], [pid_a, pid_b, pid_c]),
+    crdt:install([], [pid_a, pid_b, pid_c]),
     mnesia:wait_for_tables([pid_a, pid_b, pid_c], 1000),
     {ok, _} = crdt_server:start_link(pid_a),
     {ok, _} = crdt_server:start_link(pid_b),

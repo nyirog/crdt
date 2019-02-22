@@ -10,7 +10,7 @@
 -define(SERVER, crdt_server).
 
 %% Application callbacks
--export([init/2, start/2, stop/1]).
+-export([install/0, install/2, start/2, stop/1]).
 
 -export([add/1, connect/1, member/1, members/0, nodes/0,
          remove/1]).
@@ -27,7 +27,9 @@ start(normal, []) ->
 
 stop(_State) -> crdt_sup:stop().
 
-init(Nodes, Names) ->
+install() -> install([node()], [?SERVER]).
+
+install(Nodes, Names) ->
     mnesia:create_schema(Nodes),
     mnesia:start(),
     Create = fun (Name) ->
