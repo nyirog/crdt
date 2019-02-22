@@ -33,6 +33,7 @@ trace({trace, Pid, call,
                               Message),
     Collector.
 
+message_to_label(Message) when not erlang:is_tuple(Message) -> "";
 message_to_label({update, #event{action = Action}}) ->
     Label = io_lib:format("update: ~p", [Action]),
     lists:flatten(Label);
