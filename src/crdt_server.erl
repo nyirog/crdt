@@ -44,6 +44,10 @@ handle_call(nodes, _From, State = #{nodes := Nodes}) ->
 handle_call({join, NewNode}, From, State = #{clock := Clock, node := Self}) ->
     [LeftClock, RightClock] = itc:fork(Clock),
     gen_server:reply(From, RightClock),
+    gen_server:cast(
+        NewNode,
+        {sync, #event_key{node = Self, clock = itc:seed()}}
+    ),
     NewEvent = #event{
         key = #event_key{clock = itc:event(LeftClock), node = Self},
         action = join,
