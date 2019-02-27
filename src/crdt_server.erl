@@ -36,9 +36,9 @@ terminate(_Reason, _State) -> ok.
 %%------------------------------------------------------------------------------
 
 handle_call(members, _From, State = #{node := Self}) ->
-    {reply, lists:usort(list_values(get_name(Self))), State};
+    {reply, lists:usort(list_values(get_table_name(Self))), State};
 handle_call({member, Value}, _From, State = #{node := Self}) ->
-    {reply, has_value(get_name(Self), Value), State};
+    {reply, has_value(get_table_name(Self), Value), State};
 handle_call(nodes, _From, State = #{nodes := Nodes}) ->
     {reply, Nodes, State};
 handle_call({join, NewNode}, From, State = #{clock := Clock, node := Self}) ->
@@ -72,7 +72,7 @@ handle_cast({remove, Value}, State = #{clock := Clock, node := Self}) ->
     Event = #event{
         key = #event_key{clock = itc:event(Clock), node = Self},
         action = remove,
-        value = filter_event_by_value(get_name(Self), Value)
+        value = filter_event_by_value(get_table_name(Self), Value)
     },
     sync_event(Event, State),
     {noreply, handle_event(Event, State)};
@@ -84,14 +84,14 @@ handle_cast(
         {sync, #event_key{node = Node, clock = Clock}},
         State = #{node := Self, nodes := Nodes}
 ) ->
-    TableName = get_name(Self),
+    TableName = get_table_name(Self),
     Events = fun () -> qlc:e(qlc:q([E || E <- mnesia:table(TableName)])) end,
     UnseenEvents = case lists:member(Node, Nodes) of
         true -> list_unseen_events(TableName, Clock);
         false -> mnesia:async_dirty(Events)
     end,
     update_events(Node, UnseenEvents),
-    LastSeenClock = get_last_seen_event_clock(get_name(Self), Clock),
+    LastSeenClock = get_last_seen_event_clock(get_table_name(Self), Clock),
     gen_server:cast(
         Node,
         {sync_from, #event_key{node = Self, clock = LastSeenClock}}
@@ -101,10 +101,10 @@ handle_cast(
         {sync_from, #event_key{node = Node, clock = Clock}},
         State = #{node := Self}
 ) ->
-    update_events(Node, list_unseen_events(get_name(Self), Clock)),
+    update_events(Node, list_unseen_events(get_table_name(Self), Clock)),
     {noreply, State};
 handle_cast({connect, Node}, State = #{nodes := Nodes, node := Self}) ->
-    TableName = get_name(Self),
+    TableName = get_table_name(Self),
     Events = fun () -> qlc:e(qlc:q([E || E <- mnesia:table(TableName)])) end,
     update_events(Node, mnesia:async_dirty(Events)),
     {
@@ -161,7 +161,7 @@ handle_event(
         },
         State = #{nodes := Nodes, node := Self}
 ) ->
-    add_event(get_name(Self), Event),
+    add_event(get_table_name(Self), Event),
     State#{clock := Clock,
            nodes := add_node(
                RightNode,
@@ -173,7 +173,7 @@ handle_event(
         Event = #event{action = add, key = #event_key{clock = Clock}},
         State = #{node := Self}
 ) ->
-    add_event(get_name(Self), Event),
+    add_event(get_table_name(Self), Event),
     State#{clock := Clock};
 handle_event(
         Event = #event{
@@ -183,7 +183,7 @@ handle_event(
         },
         State = #{node := Self}
 ) ->
-    TableName = get_name(Self),
+    TableName = get_table_name(Self),
     Remove = fun () ->
         lists:foreach(
             fun (K) -> mnesia:dirty_delete(TableName, K) end,
@@ -261,5 +261,5 @@ filter_event_by_value(TableName, Value) ->
     end,
     mnesia:async_dirty(Keys).
 
-get_name({Name, _Node}) -> Name;
-get_name(Name) -> Name.
+get_table_name({Name, _Node}) -> Name;
+get_table_name(Name) -> Name.
