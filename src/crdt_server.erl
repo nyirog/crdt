@@ -143,8 +143,8 @@ init_state(ServerRef) ->
     Clock = itc:seed(),
     EventKey = #event_key{clock = Clock, node = ServerRef},
     Event = #event{action = init, key = EventKey, value = none},
-    add_event(get_name(ServerRef), Event),
-    #{nodes => [], clock => Clock, node => ServerRef}.
+    add_event(get_table_name(ServerRef), Event),
+    #{nodes => init_nodes(ServerRef), clock => Clock, node => ServerRef}.
 
 sync_event(#event{key = Key}, #{nodes := Nodes, node := Self}) ->
     Sync = fun (Pid) ->
@@ -192,6 +192,23 @@ handle_event(
     end,
     mnesia:async_dirty(Remove),
     State#{clock := Clock}.
+
+init_nodes(Self) ->
+    TableName = get_table_name(Self),
+    JoinQuery = fun() ->
+        Q = qlc:q([
+            E#event.value
+            || E <- mnesia:table(TableName),
+            E#event.action =:= join
+        ]),
+        qlc:e(Q)
+    end,
+    AllNodes = lists:flatten(mnesia:async_dirty(JoinQuery)),
+    lists:foldl(
+        fun (Node, Nodes) -> add_node(Node, Self, Nodes) end,
+        [],
+        AllNodes
+    ).
 
 add_node(Node, Self, Nodes) ->
     if Node =:= Self -> Nodes;
